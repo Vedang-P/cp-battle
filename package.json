@@ -1,0 +1,30 @@
+{
+  "name": "cp-battle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "1v1 competitive programming battles — progressive-unlock duels with ELO matchmaking.",
+  "packageManager": "pnpm@9.7.1",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "dev:realtime": "pnpm --filter web dev:realtime",
+    "dev:matchmaker": "pnpm --filter web dev:matchmaker",
+    "dev:finalizer": "pnpm --filter web dev:finalizer",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @cp-battle/db generate",
+    "db:migrate": "pnpm --filter @cp-battle/db migrate",
+    "db:push": "pnpm --filter @cp-battle/db push",
+    "db:seed": "pnpm --filter @cp-battle/db seed",
+    "db:studio": "pnpm --filter @cp-battle/db studio",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

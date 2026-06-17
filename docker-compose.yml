@@ -1,0 +1,93 @@
+# Local development infrastructure for CP Battle.
+# Brings up Postgres, Redis, and optionally the Piston code-execution judge.
+#
+# Piston does NOT work on Docker Desktop for Windows due to isolate sandbox
+# requirements. It works on Linux. For Windows dev, skip Piston and the
+# health check will report it as unavailable (code submission returns an error).
+#
+# Usage:
+#   docker compose up -d            # start all services
+#   docker compose up -d postgres redis   # skip piston
+#   docker compose down             # stop (keeps data volumes)
+
+name: cp-battle
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cpb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cpb
+      POSTGRES_PASSWORD: cpb_local
+      POSTGRES_DB: cpbattle
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./.docker-data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpb -d cpbattle"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: cpb-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./.docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Piston is the sandboxed code-execution engine (the "judge").
+  # NOTE: Piston requires Linux kernel features (isolate) that are not
+  # available on Docker Desktop for Windows. Uncomment on Linux deployments.
+  #
+  # piston:
+  #   image: ghcr.io/engineer-man/piston:latest
+  #   container_name: cpb-piston
+  #   restart: unless-stopped
+  #   ports:
+  #     - "2000:2000"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "wget -qO- http://localhost:2000/api/v2/runtimes >/dev/null || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 12
+  #     start_period: 30s
+  #
+  # piston-bootstrap:
+  #   image: alpine:3.20
+  #   container_name: cpb-piston-bootstrap
+  #   depends_on:
+  #     piston:
+  #       condition: service_healthy
+  #   environment:
+  #     PISTON_HOST: piston
+  #     PISTON_PORT: "2000"
+  #   entrypoint: ["/bin/sh", "-c"]
+  #   command:
+  #     - |
+  #       set -e
+  #       apk add --no-cache curl jq
+  #       echo "Waiting for Piston..."
+  #       until curl -sf http://$${PISTON_HOST}:$${PISTON_PORT}/api/v2/runtimes >/dev/null; do sleep 2; done
+  #       install() {
+  #         lang=$$1; ver=$$2
+  #         echo "==> Ensuring $$lang $$ver"
+  #         curl -sf -X POST http://$${PISTON_HOST}:$${PISTON_PORT}/api/v2/packages \
+  #           -H 'Content-Type: application/json' \
+  #           -d "{\"language\":\"$$lang\",\"version\":\"$$ver\"}" || echo "   (already installed or failed: $$lang $$ver)"
+  #       }
+  #       install gcc 12.2.0
+  #       install python3 3.10.0
+  #       install java 19.0.1
+  #       echo "==> Piston languages ready."
+  #   restart: "no"

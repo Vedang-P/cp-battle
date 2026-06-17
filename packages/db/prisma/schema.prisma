@@ -1,0 +1,236 @@
+// CP Battle — Prisma schema
+// All money tables for the platform. Enums mirror the realtime package types
+// where they cross the wire (Difficulty, Verdict, etc.).
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum MatchStatus {
+  QUEUING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ProblemProgressStatus {
+  LOCKED
+  UNLOCKED
+  SOLVED
+}
+
+enum Verdict {
+  PENDING
+  RUNNING
+  AC
+  WA
+  TLE
+  MLE
+  RE
+  CE
+}
+
+enum SubmissionMode {
+  RUN // sample tests only, no scoring impact
+  SUBMIT // all hidden tests, scored
+}
+
+// ---------------------------------------------------------------------------
+// Core models
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(USER)
+
+  // Rating + record. ELO updated by the match-completion job only, never ad-hoc.
+  elo          Int      @default(1200)
+  gamesPlayed  Int      @default(0)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  draws        Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Match participations. We model two FK columns on Match rather than a
+  // join table because every match has exactly two players — simpler reads.
+  matchesAsA   Match[]  @relation("MatchPlayerA")
+  matchesAsB   Match[]  @relation("MatchPlayerB")
+  wonMatches   Match[]  @relation("MatchWinner")
+
+  progress     MatchProgress[]
+  submissions  Submission[]
+
+  @@index([elo]) // leaderboard / matchmaking range scans
+}
+
+model Problem {
+  id            String     @id @default(cuid())
+  slug          String     @unique // url-friendly identifier, e.g. "two-sum"
+  title         String
+  difficulty    Difficulty
+  // Markdown rendered to HTML client-side (e.g. react-markdown).
+  descriptionMd String
+  timeLimitMs   Int        @default(2000)
+  memoryLimitMb Int        @default(256)
+  // Points awarded for a clean solve; wrong-submission penalty is applied on top.
+  points        Int
+  // JSON: { "cpp": "...", "python": "...", "java": "..." }
+  starterCode   Json
+
+  isVisible     Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  testCases     TestCase[]
+  matchesEasy   Match[]    @relation("MatchEasyProblem")
+  matchesMedium Match[]    @relation("MatchMediumProblem")
+  matchesHard   Match[]    @relation("MatchHardProblem")
+  progress      MatchProgress[]
+  submissions   Submission[]
+
+  @@index([difficulty])
+}
+
+model TestCase {
+  id             String   @id @default(cuid())
+  problemId      String
+  problem        Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  // 0-based execution order within a problem. Sample cases usually come first.
+  order          Int
+  input          String
+  expectedOutput String
+  // Sample cases are shown to the user and used by "Run"; hidden drive the real score.
+  isSample       Boolean  @default(false)
+  // Optional human-readable explanation shown for sample cases only.
+  explanation    String?
+  createdAt      DateTime @default(now())
+
+  @@index([problemId, order])
+  @@unique([problemId, order])
+}
+
+// ---------------------------------------------------------------------------
+// Matches & live state
+// ---------------------------------------------------------------------------
+
+model Match {
+  id          String      @id @default(cuid())
+  status      MatchStatus @default(QUEUING)
+
+  // Players. Always two. ON RESTRICT: never delete a user with match history;
+  // anonymise instead (keeps leaderboards/leaderboards intact).
+  playerAId   String
+  playerA     User        @relation("MatchPlayerA", fields: [playerAId], references: [id], onDelete: Restrict)
+  playerBId   String
+  playerB     User        @relation("MatchPlayerB", fields: [playerBId], references: [id], onDelete: Restrict)
+
+  // Problem set for this match. Both players get the SAME three problems.
+  easyId      String
+  easy        Problem     @relation("MatchEasyProblem", fields: [easyId], references: [id])
+  mediumId    String
+  medium      Problem     @relation("MatchMediumProblem", fields: [mediumId], references: [id])
+  hardId      String
+  hard        Problem     @relation("MatchHardProblem", fields: [hardId], references: [id])
+
+  // Timing. Server-authoritative; the client is just a countdown display.
+  startsAt    DateTime?
+  endsAt      DateTime?
+  durationSec Int         @default(1200)
+
+  // Results. Set once status = COMPLETED.
+  winnerId    String?
+  winner      User?       @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+  scoreA      Int         @default(0)
+  scoreB      Int         @default(0)
+  eloDeltaA   Int         @default(0)
+  eloDeltaB   Int         @default(0)
+  // Why the match ended, useful for debugging edge cases.
+  endReason   String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  progress    MatchProgress[]
+  submissions Submission[]
+
+  @@index([status])
+  @@index([playerAId])
+  @@index([playerBId])
+}
+
+// Per-(user, problem) row inside a match. This is what drives the live progress UI
+// and the scoring at match end. There are exactly 3 rows per user per match.
+model MatchProgress {
+  id              String               @id @default(cuid())
+  matchId         String
+  match           Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId       String
+  problem         Problem              @relation(fields: [problemId], references: [id])
+  difficulty      Difficulty
+  status          ProblemProgressStatus @default(LOCKED)
+  unlockedAt      DateTime?
+  solvedAt        DateTime?
+  wrongSubmissions Int                 @default(0)
+  // Final score for this problem; computed on solve or match end.
+  scoreEarned     Int                  @default(0)
+
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([matchId, userId, problemId])
+  @@index([matchId, userId])
+}
+
+model Submission {
+  id          String        @id @default(cuid())
+  matchId     String?
+  match       Match?        @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  // null when practicing (v2); always set in a battle.
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId   String
+  problem     Problem       @relation(fields: [problemId], references: [id])
+  language    String        // "cpp" | "python" | "java"
+  code        String
+  mode        SubmissionMode @default(SUBMIT)
+  verdict     Verdict       @default(PENDING)
+  passed      Int           @default(0)
+  total       Int           @default(0)
+  timeMs      Int?
+  memoryKb    Int?
+  // Compile error text or truncated runtime stderr. Shown only to the submitter.
+  error       String?
+  createdAt   DateTime      @default(now())
+
+  @@index([matchId])
+  @@index([userId, createdAt])
+  @@index([problemId])
+}

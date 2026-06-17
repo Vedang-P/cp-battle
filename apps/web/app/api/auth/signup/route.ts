@@ -1,0 +1,34 @@
+import { NextResponse } from 'next/server';
+import { db } from '@cp-battle/db';
+import { hashPassword } from '@/lib/password';
+import { signupSchema } from '@/lib/schemas';
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const parsed = signupSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
+    }
+
+    const { username, email, password } = parsed.data;
+
+    const existing = await db.user.findFirst({
+      where: { OR: [{ email: email.toLowerCase() }, { username }] },
+    });
+    if (existing) {
+      const field = existing.email === email.toLowerCase() ? 'email' : 'username';
+      return NextResponse.json({ error: { [field]: ['Already taken'] } }, { status: 409 });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const user = await db.user.create({
+      data: { email: email.toLowerCase(), username, passwordHash },
+      select: { id: true, username: true, email: true },
+    });
+
+    return NextResponse.json({ user }, { status: 201 });
+  } catch {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
