@@ -99,8 +99,7 @@ services:
     image: judge0/judge0:1.13.1
     container_name: cpb-judge0-server
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
+    privileged: true
     depends_on:
       judge0-db:
         condition: service_healthy
@@ -134,8 +133,7 @@ services:
     image: judge0/judge0:1.13.1
     container_name: cpb-judge0-worker
     restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
+    privileged: true
     depends_on:
       judge0-db:
         condition: service_healthy
