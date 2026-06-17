@@ -445,50 +445,85 @@ export default function BattlePage() {
         />
       </div>
 
-      {/* Top bar */}
-      <div className="flex h-10 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium text-brand tracking-tight uppercase">Battle</span>
-          <div className="flex gap-0.5">
-            {problems.map((p, i) => {
-              const isSolved = p.progress.status === 'SOLVED';
-              const isCurrent = i === activeProblem;
-              const isLocked = p.progress.status === 'LOCKED';
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => switchProblem(i)}
-                  disabled={isLocked}
-                  className={`h-6 rounded px-1.5 text-xs font-medium transition-colors ${
-                    isCurrent
-                      ? 'bg-brand/15 text-brand'
-                      : isSolved
-                      ? 'bg-success/10 text-success'
-                      : isLocked
-                      ? 'cursor-not-allowed text-text-muted/50'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  {isSolved ? '\u2713' : i + 1}
-                </button>
-              );
-            })}
+      {/* Battle HUD */}
+      <div className="flex items-stretch border-b border-border-subtle bg-bg-panel">
+        {/* Problem tabs */}
+        <div className="flex items-center gap-1 border-r border-border-subtle px-3 py-2">
+          {problems.map((p, i) => {
+            const isSolved = p.progress.status === 'SOLVED';
+            const isCurrent = i === activeProblem;
+            const isLocked = p.progress.status === 'LOCKED';
+            return (
+              <button
+                key={p.id}
+                onClick={() => switchProblem(i)}
+                disabled={isLocked}
+                className={`relative h-8 min-w-[2rem] rounded-md px-2 text-xs font-medium transition-all duration-150 ${
+                  isCurrent
+                    ? 'bg-brand text-white shadow-[0_0_12px_rgba(94,106,210,0.3)]'
+                    : isSolved
+                    ? 'bg-success/15 text-success hover:bg-success/20'
+                    : isLocked
+                    ? 'cursor-not-allowed text-text-muted/30'
+                    : 'text-text-muted hover:bg-white/[0.04] hover:text-text-secondary'
+                }`}
+              >
+                {isSolved ? (
+                  <svg className="mx-auto h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <span className="tabular-nums">{i + 1}</span>
+                )}
+                {isCurrent && (
+                  <span className="absolute -bottom-2 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-brand" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Problem title + meta */}
+        <div className="flex flex-1 items-center gap-4 px-4">
+          <div className="flex items-baseline gap-2 overflow-hidden">
+            <span className="truncate text-sm font-medium text-text-primary">{currentProblem.title}</span>
+            <span className="shrink-0 text-[10px] text-text-muted">
+              {currentProblem.points} pts
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-text-muted">
-            <span className="text-text-primary font-medium">{scores.player}</span>
-            <span className="mx-0.5">–</span>
-            <span className="text-text-secondary">{scores.opponent}</span>
+        {/* Score */}
+        <div className="flex items-center gap-3 border-l border-border-subtle px-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-medium uppercase text-brand">You</span>
+            <span className="font-mono text-sm font-semibold text-text-primary tabular-nums">{scores.player}</span>
           </div>
-          <div className={`font-mono text-xs tabular-nums ${timeWarning ? 'text-error' : 'text-text-secondary'}`}>
-            {timeStr}
+          <span className="text-text-muted/40">:</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-sm font-semibold text-text-secondary tabular-nums">{scores.opponent}</span>
+            <span className="text-[10px] font-medium uppercase text-text-muted">Them</span>
           </div>
-          <button onClick={handleForfeit} className="text-xs text-text-muted hover:text-error transition-colors">
-            Forfeit
-          </button>
         </div>
+
+        {/* Timer */}
+        <div className={`flex items-center gap-2 border-l border-border-subtle px-4 py-2 ${timeWarning ? 'bg-error/5' : ''}`}>
+          <div className={`h-1.5 w-1.5 rounded-full ${timeWarning ? 'bg-error animate-pulse' : 'bg-success'}`} />
+          <span className={`font-mono text-base font-semibold tabular-nums tracking-wider ${timeWarning ? 'text-error' : 'text-text-primary'}`}>
+            {timeStr}
+          </span>
+        </div>
+
+        {/* Forfeit */}
+        <button
+          onClick={handleForfeit}
+          className="flex items-center border-l border-border-subtle px-3 text-[11px] text-text-muted/50 transition-colors hover:bg-error/5 hover:text-error"
+        >
+          <svg className="mr-1.5 h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg>
+          Forfeit
+        </button>
       </div>
 
       {/* Main content */}
@@ -496,9 +531,8 @@ export default function BattlePage() {
         {/* Left: problem description */}
         <div className="flex w-1/2 flex-col border-r border-border-subtle">
           <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
-            <span className="text-sm font-medium text-text-primary">{currentProblem.title}</span>
             <span className="text-xs text-text-muted">
-              {currentProblem.points} pts · {currentProblem.timeLimitMs}ms · {currentProblem.memoryLimitMb}MB
+              {currentProblem.timeLimitMs}ms · {currentProblem.memoryLimitMb}MB
             </span>
           </div>
           <div className="flex-1 overflow-y-auto p-4 text-sm leading-relaxed text-text-secondary">
