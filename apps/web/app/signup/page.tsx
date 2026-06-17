@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { Zap } from 'lucide-react';
 
 export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -42,7 +43,6 @@ export default function SignUpPage() {
         return;
       }
 
-      // Auto sign-in after signup — use window.location for reliable redirect
       try {
         const signInRes = await signIn('credentials', {
           email: body.email,
@@ -51,7 +51,6 @@ export default function SignUpPage() {
         });
 
         if (signInRes?.error) {
-          // Account created but auto-login failed — send them to signin page
           window.location.href = '/signin';
           return;
         }
@@ -67,65 +66,68 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-6 text-center text-2xl font-bold">Create account</h1>
+    <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+      <div className="w-full max-w-sm animate-fade-in">
+        <div className="mb-8 text-center">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary mb-4">
+            <Zap className="h-4 w-4 text-brand" fill="currentColor" />
+            CP Battle
+          </Link>
+          <h1 className="text-lg font-semibold text-text-primary tracking-tight">Create account</h1>
+          <p className="mt-1 text-xs text-text-muted">Start competing today</p>
+        </div>
 
-        {globalError && (
-          <div className="mb-4 rounded-md bg-bad/10 border border-bad/20 px-4 py-2 text-sm text-bad">
-            {globalError}
-          </div>
-        )}
+        <div className="card p-6">
+          {globalError && (
+            <div className="mb-4 rounded-md bg-error/10 border border-error/20 px-3 py-2 text-xs text-error">
+              {globalError}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
-          <div>
-            <label htmlFor="signup-email" className="mb-1 block text-sm text-gray-400">Email</label>
-            <input
-              id="signup-email"
-              name="email"
-              type="email"
-              required
-              className="input"
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-            {errors.email && <p className="mt-1 text-xs text-bad">{errors.email[0]}</p>}
-          </div>
-          <div>
-            <label htmlFor="signup-username" className="mb-1 block text-sm text-gray-400">Username</label>
-            <input
-              id="signup-username"
-              name="username"
-              type="text"
-              required
-              className="input"
-              autoComplete="name"
-              placeholder="cool_coder"
-            />
-            {errors.username && <p className="mt-1 text-xs text-bad">{errors.username[0]}</p>}
-          </div>
-          <div>
-            <label htmlFor="signup-password" className="mb-1 block text-sm text-gray-400">Password</label>
-            <input
-              id="signup-password"
-              name="password"
-              type="password"
-              required
-              minLength={8}
-              className="input"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-            />
-            {errors.password && <p className="mt-1 text-xs text-bad">{errors.password[0]}</p>}
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full">
-            {loading ? 'Creating account...' : 'Create account'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
+            <div>
+              <input
+                name="email"
+                type="email"
+                required
+                className="input"
+                autoComplete="email"
+                placeholder="Email"
+              />
+              {errors.email && <p className="mt-1 text-xs text-error">{errors.email[0]}</p>}
+            </div>
+            <div>
+              <input
+                name="username"
+                type="text"
+                required
+                className="input"
+                autoComplete="name"
+                placeholder="Username"
+              />
+              {errors.username && <p className="mt-1 text-xs text-error">{errors.username[0]}</p>}
+            </div>
+            <div>
+              <input
+                name="password"
+                type="password"
+                required
+                minLength={8}
+                className="input"
+                autoComplete="new-password"
+                placeholder="Password (min 8 chars)"
+              />
+              {errors.password && <p className="mt-1 text-xs text-error">{errors.password[0]}</p>}
+            </div>
+            <button type="submit" disabled={loading} className="btn-primary w-full h-9">
+              {loading ? 'Creating...' : 'Create account'}
+            </button>
+          </form>
+        </div>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
+        <p className="mt-4 text-center text-xs text-text-muted">
           Already have an account?{' '}
-          <Link href="/signin" className="text-accent hover:underline">Sign in</Link>
+          <Link href="/signin" className="text-brand hover:text-brand-hover transition-colors">Sign in</Link>
         </p>
       </div>
     </main>

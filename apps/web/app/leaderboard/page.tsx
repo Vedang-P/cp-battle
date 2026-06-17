@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { EmptyState } from '@/components/EmptyState';
 
 interface LeaderboardEntry {
   id: string;
@@ -16,7 +17,6 @@ interface LeaderboardEntry {
 
 export default function LeaderboardPage() {
   const { data: session } = useSession();
-  const router = useRouter();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -24,79 +24,72 @@ export default function LeaderboardPage() {
   useEffect(() => {
     fetch('/api/leaderboard')
       .then((r) => {
-        if (!r.ok) throw new Error('Failed to fetch');
+        if (!r.ok) throw new Error('Failed');
         return r.json();
       })
-      .then((data) => {
-        setEntries(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
+      .then((data) => { setEntries(data); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
   }, []);
 
-  return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
-      <h1 className="mb-8 text-2xl font-bold">Leaderboard</h1>
+  if (loading) return <LoadingSpinner />;
 
-      {loading ? (
-        <div className="text-center text-gray-400">Loading...</div>
-      ) : error ? (
-        <div className="card p-8 text-center">
-          <p className="text-bad">Failed to load leaderboard.</p>
-          <button onClick={() => window.location.reload()} className="btn-ghost mt-4">Retry</button>
+  if (error) {
+    return (
+      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
+        <div className="text-center">
+          <p className="text-sm text-error">Failed to load leaderboard</p>
+          <button onClick={() => window.location.reload()} className="btn-ghost mt-3 h-8 text-xs">Retry</button>
         </div>
-      ) : entries.length === 0 ? (
-        <div className="card p-8 text-center text-gray-500">
-          No players yet. Be the first!
-        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-10 animate-fade-in">
+      <h1 className="mb-6 text-lg font-semibold text-text-primary tracking-tight">Leaderboard</h1>
+
+      {entries.length === 0 ? (
+        <EmptyState title="No players yet" description="Be the first to play" />
       ) : (
         <div className="card overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-white/5 text-left text-xs uppercase text-gray-500">
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">Player</th>
-                <th className="px-4 py-3 text-right">ELO</th>
-                <th className="px-4 py-3 text-right">Games</th>
-                <th className="px-4 py-3 text-right">W</th>
-                <th className="px-4 py-3 text-right">L</th>
-                <th className="px-4 py-3 text-right">D</th>
-                <th className="px-4 py-3 text-right">Win %</th>
+              <tr className="border-b border-border-subtle text-left text-xs text-text-muted">
+                <th className="px-4 py-2.5 font-medium">#</th>
+                <th className="px-4 py-2.5 font-medium">Player</th>
+                <th className="px-4 py-2.5 text-right font-medium">ELO</th>
+                <th className="px-4 py-2.5 text-right font-medium">W</th>
+                <th className="px-4 py-2.5 text-right font-medium">L</th>
+                <th className="px-4 py-2.5 text-right font-medium">D</th>
+                <th className="px-4 py-2.5 text-right font-medium">Win %</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry, i) => {
                 const isMe = session?.user?.id === entry.id;
-                const winRate =
-                  entry.gamesPlayed > 0
-                    ? ((entry.wins / entry.gamesPlayed) * 100).toFixed(1)
-                    : '0.0';
+                const winRate = entry.gamesPlayed > 0
+                  ? ((entry.wins / entry.gamesPlayed) * 100).toFixed(0)
+                  : '0';
 
                 return (
                   <tr
                     key={entry.id}
-                    className={`border-b border-white/5 transition-colors hover:bg-bg-elev ${
-                      isMe ? 'bg-accent/5' : ''
+                    className={`border-b border-border-subtle transition-colors hover:bg-white/[0.02] ${
+                      isMe ? 'bg-brand/[0.04]' : ''
                     }`}
                   >
-                    <td className="px-4 py-3 text-sm text-gray-500">{i + 1}</td>
-                    <td className="px-4 py-3 text-sm font-medium">
+                    <td className="px-4 py-2.5 text-xs text-text-muted tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-2.5 text-sm text-text-secondary">
                       {entry.username}
-                      {isMe && <span className="ml-2 text-xs text-accent">(you)</span>}
+                      {isMe && <span className="ml-1.5 text-xs text-brand">(you)</span>}
                     </td>
-                    <td className="px-4 py-3 text-right text-sm font-bold text-accent">
+                    <td className="px-4 py-2.5 text-right text-sm font-medium text-brand tabular-nums">
                       {entry.elo}
                     </td>
-                    <td className="px-4 py-3 text-right text-sm text-gray-400">
-                      {entry.gamesPlayed}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-ok">{entry.wins}</td>
-                    <td className="px-4 py-3 text-right text-sm text-bad">{entry.losses}</td>
-                    <td className="px-4 py-3 text-right text-sm text-warn">{entry.draws}</td>
-                    <td className="px-4 py-3 text-right text-sm text-gray-400">{winRate}%</td>
+                    <td className="px-4 py-2.5 text-right text-xs text-success tabular-nums">{entry.wins}</td>
+                    <td className="px-4 py-2.5 text-right text-xs text-error tabular-nums">{entry.losses}</td>
+                    <td className="px-4 py-2.5 text-right text-xs text-warning tabular-nums">{entry.draws}</td>
+                    <td className="px-4 py-2.5 text-right text-xs text-text-muted tabular-nums">{winRate}%</td>
                   </tr>
                 );
               })}

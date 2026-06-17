@@ -8,11 +8,11 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
-      <div className="card max-w-md p-8 text-center">
-        <h2 className="mb-2 text-xl font-bold text-bad">Something went wrong</h2>
-        <p className="mb-6 text-sm text-gray-400">{error.message || 'An unexpected error occurred.'}</p>
-        <button onClick={reset} className="btn-primary">
+    <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+      <div className="w-full max-w-sm text-center animate-fade-in">
+        <h2 className="text-base font-semibold text-text-primary tracking-tight">Something went wrong</h2>
+        <p className="mt-1 text-xs text-text-muted">{error.message || 'An unexpected error occurred'}</p>
+        <button onClick={reset} className="btn-ghost mt-4 h-8 text-xs">
           Try again
         </button>
       </div>

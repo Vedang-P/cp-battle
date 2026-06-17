@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { StatusBadge } from '@/components/StatusBadge';
+import { StatCard } from '@/components/StatCard';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { EmptyState } from '@/components/EmptyState';
 
 interface UserProfile {
   id: string;
@@ -14,7 +18,6 @@ interface UserProfile {
   wins: number;
   losses: number;
   draws: number;
-  createdAt: string;
 }
 
 interface MatchHistory {
@@ -26,7 +29,6 @@ interface MatchHistory {
   scoreB: number;
   eloDeltaA: number;
   eloDeltaB: number;
-  endReason: string | null;
   createdAt: string;
 }
 
@@ -50,90 +52,71 @@ export default function DashboardPage() {
         setProfile(p);
         setHistory(h);
         setLoading(false);
-      }).catch(() => {
-        setLoading(false);
-      });
+      }).catch(() => setLoading(false));
     }
   }, [status, router]);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <LoadingSpinner />;
 
   if (!profile) {
     return (
-      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
+      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
         <div className="text-center">
-          <p className="text-bad">Failed to load profile.</p>
-          <button onClick={() => window.location.reload()} className="btn-ghost mt-4">Retry</button>
+          <p className="text-sm text-error">Failed to load profile</p>
+          <button onClick={() => window.location.reload()} className="btn-ghost mt-3 h-8 text-xs">Retry</button>
         </div>
       </div>
     );
   }
 
   const winRate = profile.gamesPlayed > 0
-    ? ((profile.wins / profile.gamesPlayed) * 100).toFixed(1)
-    : '0.0';
+    ? ((profile.wins / profile.gamesPlayed) * 100).toFixed(0)
+    : '0';
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-8">
-      <h1 className="mb-8 text-2xl font-bold">Dashboard</h1>
-
-      {/* Profile Card */}
-      <div className="card mb-8 p-6">
-        <div className="flex items-start justify-between">
+    <main className="mx-auto max-w-2xl px-4 py-10 animate-fade-in">
+      {/* Profile header */}
+      <div className="mb-8">
+        <div className="flex items-baseline justify-between">
           <div>
-            <h2 className="text-xl font-bold">{profile.username}</h2>
-            <p className="text-sm text-gray-500">{profile.email}</p>
+            <h1 className="text-xl font-semibold text-text-primary tracking-tight">{profile.username}</h1>
+            <p className="mt-0.5 text-xs text-text-muted">{profile.email}</p>
           </div>
           <div className="text-right">
-            <div className="text-3xl font-bold text-accent">{profile.elo}</div>
-            <div className="text-xs text-gray-500">ELO Rating</div>
+            <div className="text-3xl font-semibold text-brand tabular-nums">{profile.elo}</div>
+            <div className="text-xs text-text-muted">ELO</div>
           </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-5 gap-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold">{profile.gamesPlayed}</div>
-            <div className="text-xs text-gray-500">Games</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-ok">{profile.wins}</div>
-            <div className="text-xs text-gray-500">Wins</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-bad">{profile.losses}</div>
-            <div className="text-xs text-gray-500">Losses</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-warn">{profile.draws}</div>
-            <div className="text-xs text-gray-500">Draws</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold">{winRate}%</div>
-            <div className="text-xs text-gray-500">Win Rate</div>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <Link href="/play" className="btn-primary">
-            Find a Match
-          </Link>
         </div>
       </div>
 
-      {/* Match History */}
-      <h2 className="mb-4 text-lg font-semibold">Recent Matches</h2>
-      {history.length === 0 ? (
-        <div className="card p-8 text-center text-gray-500">
-          No matches yet. Start playing to build your history!
+      {/* Stats row */}
+      <div className="card p-5 mb-8">
+        <div className="grid grid-cols-5 gap-4">
+          <StatCard label="Games" value={profile.gamesPlayed} />
+          <StatCard label="Wins" value={profile.wins} />
+          <StatCard label="Losses" value={profile.losses} />
+          <StatCard label="Draws" value={profile.draws} />
+          <StatCard label="Win %" value={`${winRate}%`} accent />
         </div>
+      </div>
+
+      {/* CTA */}
+      <div className="mb-8">
+        <Link href="/play" className="btn-primary w-full h-10 text-sm">
+          Find a match
+        </Link>
+      </div>
+
+      {/* Match history */}
+      <h2 className="mb-3 text-sm font-medium text-text-secondary tracking-tight">Recent matches</h2>
+      {history.length === 0 ? (
+        <EmptyState
+          title="No matches yet"
+          description="Start playing to build your history"
+          action={<Link href="/play" className="btn-ghost h-8 text-xs">Find a match</Link>}
+        />
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-px">
           {history.map((match) => {
             const isPlayerA = match.playerA.id === profile.id;
             const opponent = isPlayerA ? match.playerB : match.playerA;
@@ -146,27 +129,23 @@ export default function DashboardPage() {
             return (
               <div key={match.id} className="card flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <span
-                    className={`text-sm font-bold ${
-                      draw ? 'text-warn' : won ? 'text-ok' : 'text-bad'
-                    }`}
-                  >
+                  <StatusBadge variant={draw ? 'draw' : won ? 'win' : 'loss'}>
                     {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
-                  </span>
-                  <span className="text-sm text-gray-400">vs {opponent.username}</span>
+                  </StatusBadge>
+                  <span className="text-sm text-text-secondary">vs {opponent.username}</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm">
-                    {myScore} - {opScore}
+                  <span className="font-mono text-sm text-text-secondary tabular-nums">
+                    {myScore}–{opScore}
                   </span>
                   <span
-                    className={`text-xs font-medium ${
-                      myDelta > 0 ? 'text-ok' : myDelta < 0 ? 'text-bad' : 'text-gray-500'
+                    className={`font-mono text-xs tabular-nums ${
+                      myDelta > 0 ? 'text-success' : myDelta < 0 ? 'text-error' : 'text-text-muted'
                     }`}
                   >
                     {myDelta > 0 ? '+' : ''}{myDelta}
                   </span>
-                  <span className="text-xs text-gray-600">
+                  <span className="text-xs text-text-muted">
                     {new Date(match.createdAt).toLocaleDateString()}
                   </span>
                 </div>

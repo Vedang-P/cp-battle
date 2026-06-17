@@ -15,7 +15,6 @@ export default function PlayPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check current status on mount
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.push('/signin?callbackUrl=/play');
@@ -27,13 +26,10 @@ export default function PlayPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.status === 'queued') setQueueStatus('queued');
-        else if (data.status === 'in_match') {
-          router.push(`/battle/${data.match.id}`);
-        }
+        else if (data.status === 'in_match') router.push(`/battle/${data.match.id}`);
       });
   }, [authStatus, router]);
 
-  // Poll for match when queued
   useEffect(() => {
     if (queueStatus !== 'queued') {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -50,24 +46,17 @@ export default function PlayPage() {
       }
     }, 1000);
 
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [queueStatus, router]);
 
-  // Queue timer
   useEffect(() => {
     if (queueStatus === 'queued') {
       setQueueTime(0);
-      intervalRef.current = setInterval(() => {
-        setQueueTime((t) => t + 1);
-      }, 1000);
+      intervalRef.current = setInterval(() => setQueueTime((t) => t + 1), 1000);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [queueStatus]);
 
   const joinQueue = useCallback(async () => {
@@ -75,11 +64,8 @@ export default function PlayPage() {
     try {
       const res = await fetch('/api/match/join', { method: 'POST' });
       const data = await res.json();
-      if (res.ok && data.status === 'queued') {
-        setQueueStatus('queued');
-      } else if (data.error) {
-        setError(data.error);
-      }
+      if (res.ok && data.status === 'queued') setQueueStatus('queued');
+      else if (data.error) setError(data.error);
     } catch {
       setError('Failed to join queue');
     }
@@ -98,49 +84,44 @@ export default function PlayPage() {
   };
 
   return (
-    <main className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center px-4">
-      <div className="card w-full max-w-md p-8 text-center">
-        <h1 className="mb-2 text-2xl font-bold">Find a Match</h1>
-        <p className="mb-6 text-sm text-gray-400">
-          Join the matchmaking queue to be paired with an opponent of similar skill.
-        </p>
+    <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
+      <div className="w-full max-w-sm animate-fade-in">
+        <div className="card p-6 text-center">
+          <h1 className="mb-1 text-base font-semibold text-text-primary tracking-tight">Find a match</h1>
+          <p className="mb-5 text-xs text-text-muted">
+            Paired with an opponent of similar skill
+          </p>
 
-        {error && (
-          <div className="mb-4 rounded-md bg-bad/10 border border-bad/20 px-4 py-2 text-sm text-bad">
-            {error}
-          </div>
-        )}
-
-        {queueStatus === 'idle' && (
-          <button onClick={joinQueue} className="btn-primary w-full py-3 text-base">
-            Join Queue
-          </button>
-        )}
-
-        {queueStatus === 'queued' && (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-accent/20 bg-accent/5 p-6">
-              <div className="mb-2 text-sm text-gray-400">Searching for opponent...</div>
-              <div className="text-3xl font-bold font-mono text-accent">
-                {formatTime(queueTime)}
-              </div>
+          {error && (
+            <div className="mb-4 rounded-md bg-error/10 border border-error/20 px-3 py-2 text-xs text-error">
+              {error}
             </div>
-            <div className="flex items-center justify-center gap-2">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-              <span className="text-xs text-gray-500">Matching based on ELO rating</span>
-            </div>
-            <button onClick={leaveQueue} className="btn-ghost w-full">
-              Leave Queue
+          )}
+
+          {queueStatus === 'idle' && (
+            <button onClick={joinQueue} className="btn-primary w-full h-10 text-sm">
+              Join queue
             </button>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="mt-8 max-w-sm text-center text-xs text-gray-600">
-        <p>
-          You&apos;ll be matched with a player of similar ELO rating. Once matched, you&apos;ll enter
-          a 20-minute battle with 3 progressively harder problems.
-        </p>
+          {queueStatus === 'queued' && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border-subtle bg-bg-elevated p-6">
+                <div className="mb-2 text-xs text-text-muted">Searching</div>
+                <div className="font-mono text-3xl font-semibold text-text-primary tabular-nums">
+                  {formatTime(queueTime)}
+                </div>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
+                <span className="text-xs text-text-muted">Matching by ELO</span>
+              </div>
+              <button onClick={leaveQueue} className="btn-ghost w-full h-9 text-sm">
+                Leave queue
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );

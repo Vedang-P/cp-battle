@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { Zap } from 'lucide-react';
 
 export default function SignInPage() {
   const searchParams = useSearchParams();
@@ -33,7 +34,6 @@ export default function SignInPage() {
         return;
       }
 
-      // Successful sign-in — use window.location for reliable redirect
       window.location.href = res?.url || callbackUrl;
     } catch {
       setError('Network error. Please try again.');
@@ -42,49 +42,54 @@ export default function SignInPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-6 text-center text-2xl font-bold">Sign in</h1>
+    <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+      <div className="w-full max-w-sm animate-fade-in">
+        <div className="mb-8 text-center">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary mb-4">
+            <Zap className="h-4 w-4 text-brand" fill="currentColor" />
+            CP Battle
+          </Link>
+          <h1 className="text-lg font-semibold text-text-primary tracking-tight">Sign in</h1>
+          <p className="mt-1 text-xs text-text-muted">Welcome back</p>
+        </div>
 
-        {error && (
-          <div className="mb-4 rounded-md bg-bad/10 border border-bad/20 px-4 py-2 text-sm text-bad">
-            {error}
-          </div>
-        )}
+        <div className="card p-6">
+          {error && (
+            <div className="mb-4 rounded-md bg-error/10 border border-error/20 px-3 py-2 text-xs text-error">
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
-          <div>
-            <label htmlFor="signin-email" className="mb-1 block text-sm text-gray-400">Email</label>
-            <input
-              id="signin-email"
-              name="email"
-              type="email"
-              required
-              className="input"
-              autoComplete="email username"
-              placeholder="you@example.com"
-            />
-          </div>
-          <div>
-            <label htmlFor="signin-password" className="mb-1 block text-sm text-gray-400">Password</label>
-            <input
-              id="signin-password"
-              name="password"
-              type="password"
-              required
-              className="input"
-              autoComplete="current-password"
-              placeholder="Your password"
-            />
-          </div>
-          <button type="submit" disabled={loading} className="btn-primary w-full">
-            {loading ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
+            <div>
+              <input
+                name="email"
+                type="email"
+                required
+                className="input"
+                autoComplete="email"
+                placeholder="Email"
+              />
+            </div>
+            <div>
+              <input
+                name="password"
+                type="password"
+                required
+                className="input"
+                autoComplete="current-password"
+                placeholder="Password"
+              />
+            </div>
+            <button type="submit" disabled={loading} className="btn-primary w-full h-9">
+              {loading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+        </div>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
-          No account?{' '}
-          <Link href="/signup" className="text-accent hover:underline">Create one</Link>
+        <p className="mt-4 text-center text-xs text-text-muted">
+          Don&apos;t have an account?{' '}
+          <Link href="/signup" className="text-brand hover:text-brand-hover transition-colors">Create one</Link>
         </p>
       </div>
     </main>

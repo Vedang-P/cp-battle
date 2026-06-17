@@ -1,42 +1,65 @@
 import Link from 'next/link';
+import { Zap, Timer, TrendingUp } from 'lucide-react';
 
 export default function HomePage() {
   return (
-    <main className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center px-6">
-      <div className="mx-auto max-w-2xl text-center">
-        <div className="mb-8 space-y-4">
-          <h1 className="text-6xl font-bold tracking-tight">
-            <span className="text-accent">CP</span> Battle
-          </h1>
-          <p className="text-xl text-gray-400">
-            1v1 competitive programming duels. Race head-to-head, solve progressively
-            harder problems, climb the ELO ladder.
-          </p>
+    <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-6">
+      {/* Hero */}
+      <div className="mx-auto max-w-xl text-center animate-fade-in">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-bg-panel px-3 py-1 text-xs text-text-tertiary">
+          <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+          Live matchmaking
         </div>
 
-        <div className="mb-12 grid grid-cols-3 gap-4 text-left">
-          <div className="card p-4">
-            <div className="mb-2 text-2xl font-bold text-accent">1v1</div>
-            <div className="text-sm text-gray-400">Real-time duels against opponents of similar skill</div>
-          </div>
-          <div className="card p-4">
-            <div className="mb-2 text-2xl font-bold text-ok">3</div>
-            <div className="text-sm text-gray-400">Progressive difficulty — Easy, Medium, Hard</div>
-          </div>
-          <div className="card p-4">
-            <div className="mb-2 text-2xl font-bold text-warn">ELO</div>
-            <div className="text-sm text-gray-400">Ranked matchmaking with skill-based pairing</div>
-          </div>
-        </div>
+        <h1 className="text-5xl font-semibold tracking-tight text-text-primary sm:text-6xl" style={{ letterSpacing: '-0.03em' }}>
+          Code. Race.
+          <br />
+          <span className="text-brand">Compete.</span>
+        </h1>
 
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <Link href="/signup" className="btn-primary px-8 py-3 text-base">
-            Get Started
+        <p className="mt-5 text-base text-text-tertiary leading-relaxed" style={{ letterSpacing: '-0.011em' }}>
+          Head-to-head programming duels. Solve the same problems faster than
+          your opponent and climb the ELO ladder.
+        </p>
+
+        <div className="mt-8 flex items-center justify-center gap-3">
+          <Link href="/signup" className="btn-primary h-9 px-6 text-sm">
+            Get started
           </Link>
-          <Link href="/leaderboard" className="btn-ghost px-8 py-3 text-base">
-            View Leaderboard
+          <Link href="/leaderboard" className="btn-ghost h-9 px-6 text-sm">
+            Leaderboard
           </Link>
         </div>
+      </div>
+
+      {/* Features */}
+      <div className="mt-20 grid max-w-lg grid-cols-3 gap-px rounded-lg border border-border-subtle bg-border-subtle animate-slide-up">
+        {[
+          {
+            icon: Zap,
+            title: '1v1 Duels',
+            desc: 'Real-time matches against similar skill',
+            color: 'text-brand',
+          },
+          {
+            icon: Timer,
+            title: 'Race Mode',
+            desc: 'Timed problems, first to finish wins',
+            color: 'text-success',
+          },
+          {
+            icon: TrendingUp,
+            title: 'ELO Ranked',
+            desc: 'Skill-based matchmaking and rankings',
+            color: 'text-warning',
+          },
+        ].map((f) => (
+          <div key={f.title} className="bg-bg-panel p-5">
+            <f.icon className={`mb-3 h-5 w-5 ${f.color}`} strokeWidth={1.5} />
+            <div className="text-sm font-medium text-text-primary tracking-tight">{f.title}</div>
+            <div className="mt-1 text-xs text-text-muted leading-relaxed">{f.desc}</div>
+          </div>
+        ))}
       </div>
     </main>
   );
