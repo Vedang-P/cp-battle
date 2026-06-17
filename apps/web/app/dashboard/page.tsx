@@ -56,10 +56,21 @@ export default function DashboardPage() {
     }
   }, [status, router]);
 
-  if (loading || !profile) {
+  if (loading) {
     return (
       <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
         <div className="text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
+        <div className="text-center">
+          <p className="text-bad">Failed to load profile.</p>
+          <button onClick={() => window.location.reload()} className="btn-ghost mt-4">Retry</button>
+        </div>
       </div>
     );
   }

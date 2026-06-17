@@ -14,7 +14,7 @@
  */
 
 import { isOutputCorrect } from './compare';
-import { executeOnce, type PistonRunResult } from './judge0';
+import { executeOnce, TimeoutError, type PistonRunResult } from './judge0';
 import type { LanguageConfig } from './languages';
 
 export type Verdict = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE';
@@ -108,7 +108,19 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
         memoryLimitMb: effectiveMemMb,
       });
     } catch (err) {
-      // Piston unavailable — return a clear error instead of crashing
+      // Map TimeoutError to TLE, not CE
+      if (err instanceof TimeoutError) {
+        return {
+          verdict: 'TLE',
+          passed: 0,
+          total: testCases.length,
+          timeMs: effectiveTimeMs,
+          memoryKb: null,
+          compileError: null,
+          runtimeError: null,
+        };
+      }
+      // Other judge errors
       const msg = err instanceof Error ? err.message : String(err);
       return {
         verdict: 'CE',

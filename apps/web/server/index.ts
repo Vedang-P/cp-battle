@@ -12,36 +12,95 @@
  */
 
 import { createServer } from 'node:http';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
 import type { ClientEvents, ServerEvents } from '@cp-battle/realtime';
 import { matchRoom, userRoom } from '@cp-battle/realtime';
-import { env } from '../lib/env';
+import { db } from '@cp-battle/db';
 
-const PORT = Number(process.env.REALTIME_PORT ?? 3001);
+const PORT = Number(process.env.REALTIME_PORT ?? 3002);
+const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? '';
 
-const httpServer = createServer();
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+  username?: string;
+}
+
+const httpServer = createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
 const io = new Server<ClientEvents, ServerEvents>(httpServer, {
-  cors: { origin: env.realtimeCorsOrigin, credentials: true },
+  cors: { origin: process.env.REALTIME_CORS_ORIGIN ?? 'http://localhost:3000', credentials: true },
+  maxHttpBufferSize: 1e6,
+  connectTimeout: 10000,
 });
 
 // Track connected sockets per match
 const matchSockets = new Map<string, Set<string>>();
 const socketMatches = new Map<string, string>();
 
-io.on('connection', (socket) => {
-  console.log(`[realtime] connect ${socket.id}`);
+/** Verify a NextAuth-style JWT (HMAC-SHA256) using only Node crypto. */
+function verifyJwt(token: string, secret: string): { userId: string; username?: string } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [header, payload, sig] = parts as [string, string, string];
+    const expectedSig = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expectedBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null;
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    if (!data.sub || typeof data.sub !== 'string') return null;
+    return { userId: data.sub, username: data.name };
+  } catch {
+    return null;
+  }
+}
+
+// Auth middleware — verify JWT from handshake
+io.use((socket: AuthenticatedSocket, next) => {
+  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  if (!token || typeof token !== 'string') {
+    return next(new Error('Authentication required'));
+  }
+  if (!AUTH_SECRET) {
+    return next(new Error('Server misconfigured'));
+  }
+  const decoded = verifyJwt(token, AUTH_SECRET);
+  if (!decoded) {
+    return next(new Error('Invalid token'));
+  }
+  socket.userId = decoded.userId;
+  socket.username = decoded.username ?? '';
+  next();
+});
+
+io.on('connection', (socket: AuthenticatedSocket) => {
+  console.log(`[realtime] connect ${socket.id} user=${socket.userId}`);
 
   socket.on('match:join', (matchId, ack) => {
-    void socket.join(matchRoom(matchId));
-
-    if (!matchSockets.has(matchId)) {
-      matchSockets.set(matchId, new Set());
-    }
-    matchSockets.get(matchId)!.add(socket.id);
-    socketMatches.set(socket.id, matchId);
-
-    console.log(`[realtime] ${socket.id} joined match ${matchId}`);
-    ack?.(true);
+    // Verify the user is a participant in this match
+    db.match.findUnique({ where: { id: matchId }, select: { playerAId: true, playerBId: true } })
+      .then((match) => {
+        if (!match) { ack?.(false); return; }
+        if (match.playerAId !== socket.userId && match.playerBId !== socket.userId) {
+          ack?.(false); return;
+        }
+        void socket.join(matchRoom(matchId));
+        if (!matchSockets.has(matchId)) matchSockets.set(matchId, new Set());
+        matchSockets.get(matchId)!.add(socket.id);
+        socketMatches.set(socket.id, matchId);
+        console.log(`[realtime] ${socket.id} joined match ${matchId}`);
+        ack?.(true);
+      })
+      .catch(() => ack?.(false));
   });
 
   socket.on('match:leave', (matchId) => {
@@ -52,11 +111,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('match:heartbeat', (matchId) => {
-    // Acknowledge heartbeat — client knows server is alive
-    socket.emit('timer:sync' as any, {
-      endsAt: new Date().toISOString(),
-      remainingMs: 0,
-    } as any);
+    // Look up actual match end time
+    db.match.findUnique({ where: { id: matchId }, select: { endsAt: true } })
+      .then((match) => {
+        const endsAt = match?.endsAt ?? new Date();
+        const remainingMs = Math.max(0, endsAt.getTime() - Date.now());
+        socket.emit('timer:sync' as any, {
+          endsAt: endsAt.toISOString(),
+          remainingMs,
+        } as any);
+      })
+      .catch(() => {});
   });
 
   socket.on('disconnect', () => {

@@ -28,6 +28,10 @@ export async function POST(
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    if (code.length > 64000) {
+      return NextResponse.json({ error: 'Code exceeds maximum length (64KB)' }, { status: 413 });
+    }
+
     const langConfig = getLanguage(language);
     if (!langConfig) {
       return NextResponse.json({ error: 'Unsupported language' }, { status: 400 });
@@ -99,82 +103,117 @@ export async function POST(
     });
 
     // Judge
-    const result = await judgeSubmission({
-      language: langConfig,
-      source: code,
-      testCases: testCases.map((tc) => ({ input: tc.input, expected: tc.expectedOutput })),
-      timeLimitMs: problem.timeLimitMs,
-      memoryLimitMb: problem.memoryLimitMb,
-    });
+    let result;
+    try {
+      result = await judgeSubmission({
+        language: langConfig,
+        source: code,
+        testCases: testCases.map((tc) => ({ input: tc.input, expected: tc.expectedOutput })),
+        timeLimitMs: problem.timeLimitMs,
+        memoryLimitMb: problem.memoryLimitMb,
+      });
+    } catch (judgeErr) {
+      // Update submission to reflect judge failure, not leave it stuck as RUNNING
+      const msg = judgeErr instanceof Error ? judgeErr.message : String(judgeErr);
+      await db.submission.update({
+        where: { id: submission.id },
+        data: { verdict: 'CE', passed: 0, error: `Judge error: ${msg.slice(0, 2000)}` },
+      });
+      return NextResponse.json({
+        submissionId: submission.id,
+        verdict: 'CE',
+        passed: 0,
+        total: testCases.length,
+        timeMs: null,
+        memoryKb: null,
+        error: `Judge error: ${msg.slice(0, 2000)}`,
+        earlyFinish: false,
+        matchStatus: 'IN_PROGRESS',
+        nextProblem: null,
+        winnerId: null,
+      });
+    }
 
-    // Update submission
-    await db.submission.update({
-      where: { id: submission.id },
-      data: {
-        verdict: result.verdict,
-        passed: result.passed,
-        timeMs: result.timeMs,
-        memoryKb: result.memoryKb,
-        error: result.compileError ?? result.runtimeError ?? null,
-      },
-    });
-
-    // If SUBMIT and AC, update progress and unlock next problem
-    if (submissionMode === 'SUBMIT' && result.verdict === 'AC') {
-      await db.matchProgress.update({
-        where: { id: progress.id },
+    // Update submission and progress atomically after judging
+    const postJudgeResult = await db.$transaction(async (tx) => {
+      await tx.submission.update({
+        where: { id: submission.id },
         data: {
-          status: 'SOLVED',
-          solvedAt: new Date(),
-          scoreEarned:
-            problem.points - progress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty,
+          verdict: result.verdict,
+          passed: result.passed,
+          timeMs: result.timeMs,
+          memoryKb: result.memoryKb,
+          error: result.compileError ?? result.runtimeError ?? null,
         },
       });
 
-      // Unlock next problem in the sequence (by problemOrder)
-      const nextOrder = progress.problemOrder + 1;
-      const nextProgress = match.progress.find(
-        (p) => p.userId === user.id && p.problemOrder === nextOrder,
-      );
-      if (nextProgress) {
-        await db.matchProgress.update({
-          where: { id: nextProgress.id },
-          data: { status: 'UNLOCKED', unlockedAt: new Date() },
+      let earlyFinish = false;
+      let matchStatus = 'IN_PROGRESS';
+      let nextProblem = null;
+      let winnerId = null;
+
+      // If SUBMIT and AC, update progress and unlock next problem
+      if (submissionMode === 'SUBMIT' && result.verdict === 'AC') {
+        await tx.matchProgress.update({
+          where: { id: progress.id },
+          data: {
+            status: 'SOLVED',
+            solvedAt: new Date(),
+            scoreEarned:
+              problem.points - progress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty,
+          },
+        });
+
+        // Unlock next problem in the sequence (by problemOrder)
+        const nextOrder = progress.problemOrder + 1;
+        const nextProgress = match.progress.find(
+          (p) => p.userId === user.id && p.problemOrder === nextOrder,
+        );
+        if (nextProgress) {
+          await tx.matchProgress.update({
+            where: { id: nextProgress.id },
+            data: { status: 'UNLOCKED', unlockedAt: new Date() },
+          });
+          const nextProb = await tx.problem.findUnique({ where: { id: nextProgress.problemId } });
+          nextProblem = nextProb ? { slug: nextProb.slug, problemId: nextProb.id, problemOrder: nextProgress.problemOrder } : null;
+        }
+
+        // Check for early finish — re-check after marking current as SOLVED
+        const updatedProgress = await tx.matchProgress.findMany({
+          where: { matchId: match.id, userId: user.id },
+        });
+        const allDone = updatedProgress.every((p) => p.status === 'SOLVED');
+
+        if (allDone) {
+          earlyFinish = true;
+          matchStatus = 'COMPLETED';
+          winnerId = user.id;
+          // Note: full finalization happens outside this transaction
+        }
+      }
+
+      // If SUBMIT and not AC, increment wrong submissions
+      if (submissionMode === 'SUBMIT' && result.verdict !== 'AC') {
+        await tx.matchProgress.update({
+          where: { id: progress.id },
+          data: { wrongSubmissions: { increment: 1 } },
         });
       }
 
-      // Check for early finish (Sprint mode: all problems solved)
-      const matchMode = match.mode as MatchModeType;
-      const userProgress = match.progress.filter((p) => p.userId === user.id);
-      const allSolved =
-        userProgress.every((p) => p.problemId === problemId ? true : p.status === 'SOLVED') &&
-        nextOrder >= match.totalProblems;
+      return { earlyFinish, matchStatus, nextProblem, winnerId };
+    });
 
-      // Actually, we need to re-check after marking current as SOLVED
-      const updatedProgress = await db.matchProgress.findMany({
-        where: { matchId: match.id, userId: user.id },
-      });
-      const allDone = updatedProgress.every((p) => p.status === 'SOLVED');
-
-      if (allDone) {
-        // Player finished all problems — finalize match (early finish)
-        try {
-          await finalizeMatch({
-            matchId: match.id,
-            reason: 'early_finish',
-          });
-        } catch (e) {
-          console.error('[submit] early finish finalization failed:', e);
-        }
+    // If early finish was detected, finalize the match (in its own transaction)
+    if (postJudgeResult.earlyFinish) {
+      try {
+        const finalResult = await finalizeMatch({
+          matchId: match.id,
+          reason: 'early_finish',
+        });
+        postJudgeResult.winnerId = finalResult?.winnerId ?? user.id;
+      } catch (e) {
+        console.error('[submit] early finish finalization failed:', e);
       }
-    }
-
-    // If SUBMIT and not AC, increment wrong submissions
-    if (submissionMode === 'SUBMIT' && result.verdict !== 'AC') {
-      await db.matchProgress.update({
-        where: { id: progress.id },
-        data: { wrongSubmissions: { increment: 1 } },
-      });
     }
 
     return NextResponse.json({
@@ -185,6 +224,10 @@ export async function POST(
       timeMs: result.timeMs,
       memoryKb: result.memoryKb,
       error: result.compileError ?? result.runtimeError ?? null,
+      earlyFinish: postJudgeResult.earlyFinish,
+      matchStatus: postJudgeResult.matchStatus,
+      nextProblem: postJudgeResult.nextProblem,
+      winnerId: postJudgeResult.winnerId,
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {

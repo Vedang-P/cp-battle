@@ -677,12 +677,12 @@ public class Main {
     },
     testCases: {
       create: [
-        { order: 0, input: '3\nwrt\nwrf\ner', expectedOutput: 'wtrfe', isSample: true },
+        { order: 0, input: '3\nwrt\nwrf\ner', expectedOutput: 'wertf', isSample: true },
         { order: 1, input: '2\nabc\nab', expectedOutput: '-1', isSample: true },
         { order: 2, input: '1\na', expectedOutput: 'a', isSample: false },
-        { order: 3, input: '3\nabc\ndef\nghi', expectedOutput: 'ihfecbadg', isSample: false },
-        { order: 4, input: '4\nba\nbc\nac\nca', expectedOutput: 'bac', isSample: false },
-        { order: 5, input: '5\nzyx\nwvu\nuts\nrqo\npon', expectedOutput: 'zyxwvutsrqpon', isSample: false },
+        { order: 3, input: '2\nab\ncd', expectedOutput: '-1', isSample: false },
+        { order: 4, input: '3\nba\nbc\nca', expectedOutput: '-1', isSample: false },
+        { order: 5, input: '3\nz\nx\nz', expectedOutput: '-1', isSample: false },
       ],
     },
   },

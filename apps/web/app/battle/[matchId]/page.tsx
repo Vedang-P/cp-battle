@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { io, Socket } from 'socket.io-client';
 import dynamic from 'next/dynamic';
+import ReactMarkdown from 'react-markdown';
 import type { MatchEndPayload, SubmissionVerdictPayload, OpponentSnapshot } from '@cp-battle/realtime';
 import RaceTrack from '@/components/RaceTrack';
 
@@ -238,6 +239,34 @@ export default function BattlePage() {
     };
   }, [matchId, matchEnd]);
 
+  // Poll for match completion (detects forfeit/early_finish from opponent)
+  useEffect(() => {
+    if (matchEnd) return;
+
+    const checkCompletion = () => {
+      fetch(`/api/match/${matchId}/result`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.match?.status === 'COMPLETED') {
+            setMatchEnd({
+              matchId,
+              status: 'COMPLETED',
+              winnerId: d.match.winnerId,
+              scoreA: d.match.scoreA,
+              scoreB: d.match.scoreB,
+              eloDeltaA: d.match.eloDeltaA,
+              eloDeltaB: d.match.eloDeltaB,
+              reason: d.match.endReason || 'unknown',
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    const pollRef = setInterval(checkCompletion, 3000);
+    return () => clearInterval(pollRef);
+  }, [matchId, matchEnd]);
+
   // Switch language -> update code
   const switchLanguage = useCallback(
     (lang: LanguageId) => {
@@ -392,7 +421,7 @@ export default function BattlePage() {
               {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
             </div>
             <div className="text-xs text-gray-500">
-              {matchEnd.reason === 'early_finish' ? 'Race finished!' : 'Time ran out'}
+              {matchEnd.reason === 'early_finish' ? 'Race finished!' : matchEnd.reason === 'forfeit' ? 'Opponent forfeited' : matchEnd.reason === 'time' ? 'Time ran out' : 'Match ended'}
             </div>
           </div>
 
@@ -525,7 +554,17 @@ export default function BattlePage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 text-sm leading-relaxed text-gray-300">
-            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(currentProblem.descriptionMd) }} />
+            <ReactMarkdown
+              components={{
+                h2: ({ children }) => <h2 className="text-xl font-bold mt-6 mb-3">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-lg font-bold mt-4 mb-2">{children}</h3>,
+                strong: ({ children }) => <strong>{children}</strong>,
+                code: ({ children }) => <code className="rounded bg-bg-elev px-1 py-0.5 text-accent">{children}</code>,
+                li: ({ children }) => <li className="ml-4">{children}</li>,
+              }}
+            >
+              {currentProblem.descriptionMd}
+            </ReactMarkdown>
           </div>
         </div>
 
@@ -651,16 +690,4 @@ export default function BattlePage() {
       </div>
     </main>
   );
-}
-
-/** Simple markdown-to-HTML for problem descriptions. */
-function renderMarkdown(md: string): string {
-  return md
-    .replace(/^### (.+)$/gm, '<h3 class="text-lg font-bold mt-4 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.+?)`/g, '<code class="rounded bg-bg-elev px-1 py-0.5 text-accent">$1</code>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>')
-    .replace(/\n\n/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>');
 }

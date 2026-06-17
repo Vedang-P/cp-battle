@@ -19,12 +19,20 @@ export default function LeaderboardPage() {
   const router = useRouter();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch('/api/leaderboard')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('Failed to fetch');
+        return r.json();
+      })
       .then((data) => {
         setEntries(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
         setLoading(false);
       });
   }, []);
@@ -35,6 +43,11 @@ export default function LeaderboardPage() {
 
       {loading ? (
         <div className="text-center text-gray-400">Loading...</div>
+      ) : error ? (
+        <div className="card p-8 text-center">
+          <p className="text-bad">Failed to load leaderboard.</p>
+          <button onClick={() => window.location.reload()} className="btn-ghost mt-4">Retry</button>
+        </div>
       ) : entries.length === 0 ? (
         <div className="card p-8 text-center text-gray-500">
           No players yet. Be the first!

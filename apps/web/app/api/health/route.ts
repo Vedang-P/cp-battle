@@ -16,10 +16,13 @@ export const dynamic = 'force-dynamic';
 
 async function probe<T>(name: string, fn: () => Promise<T>): Promise<[string, T | { error: string }]> {
   try {
-    const result = await fn();
+    const result = await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
     return [name, result as T | { error: string }];
   } catch (e) {
-    return [name, { error: e instanceof Error ? e.message : String(e) }];
+    return [name, { error: 'check failed' }];
   }
 }
 
@@ -40,7 +43,7 @@ export async function GET() {
   const allOk = !Object.values(services).some((v) => v && typeof v === 'object' && 'error' in v);
 
   return NextResponse.json(
-    { status: allOk ? 'ok' : 'degraded', services, ts: new Date().toISOString() },
+    { status: allOk ? 'ok' : 'degraded', ts: new Date().toISOString() },
     { status: allOk ? 200 : 503 },
   );
 }

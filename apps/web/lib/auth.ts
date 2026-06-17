@@ -8,7 +8,7 @@
  * everything the rest of the app needs without a DB lookup per request.
  */
 
-import { NextAuthOptions } from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { db } from '@cp-battle/db';
 import { env } from '@/lib/env';

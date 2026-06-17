@@ -31,6 +31,11 @@ services:
       - "5432:5432"
     volumes:
       - ./.docker-data/postgres:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cpb -d cpbattle"]
       interval: 5s
@@ -41,13 +46,18 @@ services:
     image: redis:7-alpine
     container_name: cpb-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "cpb_redis_pass"]
     ports:
       - "6379:6379"
     volumes:
       - ./.docker-data/redis:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "cpb_redis_pass", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -89,7 +99,8 @@ services:
     image: judge0/judge0:1.13.1
     container_name: cpb-judge0-server
     restart: unless-stopped
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
     depends_on:
       judge0-db:
         condition: service_healthy
@@ -107,6 +118,11 @@ services:
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
       SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
     healthcheck:
       test: ["CMD-SHELL", "/usr/bin/curl -sf http://localhost:2358/languages >/dev/null || exit 1"]
       interval: 10s
@@ -118,7 +134,8 @@ services:
     image: judge0/judge0:1.13.1
     container_name: cpb-judge0-worker
     restart: unless-stopped
-    privileged: true
+    cap_add:
+      - SYS_ADMIN
     depends_on:
       judge0-db:
         condition: service_healthy
@@ -135,3 +152,8 @@ services:
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
       SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G

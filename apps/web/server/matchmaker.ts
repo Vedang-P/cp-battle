@@ -5,7 +5,7 @@
  * ELO gap fits their time-widened matchmaking window.
  */
 
-import { findPair, dequeue, createMatch, QUEUE_KEY } from '@cp-battle/match';
+import { findPair, dequeue, createMatch, QUEUE_KEY, type RedisLike } from '@cp-battle/match';
 import Redis from 'ioredis';
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -16,11 +16,14 @@ const redis = new Redis(redisUrl, {
   enableReadyCheck: true,
 });
 
+// Cast ioredis instance to the minimal RedisLike interface used by @cp-battle/match
+const redisCompat = redis as unknown as RedisLike;
+
 const META_PREFIX = 'cpb:matchmaking:meta:';
 
 async function poll() {
   try {
-    const pair = await findPair(redis, Date.now());
+    const pair = await findPair(redisCompat, Date.now());
     if (!pair) return;
 
     const [playerAId, playerBId] = pair;
@@ -34,8 +37,8 @@ async function poll() {
 
     // Remove both from queue
     await Promise.all([
-      dequeue(redis, playerAId),
-      dequeue(redis, playerBId),
+      dequeue(redisCompat, playerAId),
+      dequeue(redisCompat, playerBId),
     ]);
 
     // Create the match

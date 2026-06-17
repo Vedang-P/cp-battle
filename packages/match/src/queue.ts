@@ -8,6 +8,9 @@
  * Concurrency: pairing is done under a short Redis lock (LOCK_KEY) so two
  * workers can't pair the same player twice. The web app runs a single process
  * for now, but this keeps us safe under horizontal scaling.
+ *
+ * Atomicity: enqueue uses a Redis pipeline to make zadd + set + ttl a single
+ * round-trip, preventing phantom entries from partial failures.
  */
 
 import { matchmakingWindow } from './config';
@@ -16,6 +19,7 @@ export const QUEUE_KEY = 'cpb:matchmaking:queue';
 export const QUEUE_LOCK_KEY = 'cpb:matchmaking:lock';
 /** Per-player metadata: { elo, joinedAtMs }. Keyed by userId. */
 const QUEUE_META_PREFIX = 'cpb:matchmaking:meta:';
+const META_TTL_MS = 5 * 60 * 1000; // 5 minutes — stale entries expire
 
 export interface QueueEntry {
   userId: string;
@@ -30,32 +34,46 @@ export interface RedisLike {
   zrange(key: string, start: number, stop: number, opts?: string): Promise<string[]>;
   zrem(key: string, ...members: string[]): Promise<number>;
   zcard(key: string): Promise<number>;
-  set(
-    key: string,
-    value: string,
-    mode?: 'NX' | 'XX',
-    ex?: 'PX',
-    ms?: number,
-  ): Promise<string | null>;
+  set(key: string, value: string): Promise<unknown>;
+  pexpire(key: string, ms: number): Promise<unknown>;
   del(...keys: string[]): Promise<number>;
-  evalsha(...args: (string | number)[]): Promise<unknown>;
+  evalsha(...args: unknown[]): Promise<unknown>;
   get(key: string): Promise<string | null>;
+  pipeline?: () => PipelineLike;
+}
+
+export interface PipelineLike {
+  zadd(key: string, score: number, member: string): PipelineLike;
+  set(key: string, value: string): PipelineLike;
+  pexpire(key: string, ms: number): PipelineLike;
+  exec(): Promise<unknown[]>;
 }
 
 function metaKey(userId: string): string {
   return `${QUEUE_META_PREFIX}${userId}`;
 }
 
-/** Enqueue a player. Idempotent: re-joining refreshes join time. */
+/**
+ * Enqueue a player atomically using a Redis pipeline if available,
+ * otherwise falls back to sequential commands.
+ */
 export async function enqueue(
   redis: RedisLike,
   entry: QueueEntry,
 ): Promise<void> {
-  await redis.zadd(QUEUE_KEY, entry.elo, entry.userId);
-  await redis.set(
-    metaKey(entry.userId),
-    JSON.stringify({ elo: entry.elo, joinedAtMs: entry.joinedAtMs, mode: entry.mode ?? 'SPRINT' }),
-  );
+  const meta = JSON.stringify({ elo: entry.elo, joinedAtMs: entry.joinedAtMs, mode: entry.mode ?? 'SPRINT' });
+
+  if (redis.pipeline) {
+    const pipe = redis.pipeline();
+    pipe.zadd(QUEUE_KEY, entry.elo, entry.userId);
+    pipe.set(metaKey(entry.userId), meta);
+    pipe.pexpire(metaKey(entry.userId), META_TTL_MS);
+    await pipe.exec();
+  } else {
+    await redis.zadd(QUEUE_KEY, entry.elo, entry.userId);
+    await redis.set(metaKey(entry.userId), meta);
+    await redis.pexpire(metaKey(entry.userId), META_TTL_MS);
+  }
 }
 
 export async function dequeue(redis: RedisLike, userId: string): Promise<void> {

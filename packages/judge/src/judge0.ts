@@ -19,6 +19,13 @@
 
 import type { LanguageConfig } from './languages';
 
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
 const JUDGE0_URL = process.env.JUDGE0_URL ?? 'http://localhost:2358';
 
 /**
@@ -194,6 +201,12 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
 
     const result = mapJudge0ToPistonResult(data as Judge0SubmissionResponse);
     return result;
+  } catch (err) {
+    // Map AbortError to TLE so the submission route shows TLE instead of CE
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new TimeoutError(`Judge0 request timed out after ${httpTimeoutMs ?? cpuTimeLimitMs + 10000}ms`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }

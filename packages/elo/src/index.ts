@@ -81,21 +81,16 @@ export function updateRatings(
   const sA = scoreForResult(resultFromA);
   const sB = 1 - sA;
 
-  // Cap each side's swing by its own K so provisional vs established asymmetry
-  // can't produce a net-zero-sum leak (sum of deltas stays zero).
+  // Each player gets their own K-factor delta independently.
+  // We do NOT force zero-sum normalization — this keeps the rating system
+  // honest: provisional players can gain more than veterans lose, and vice versa.
   const deltaA = kA * (sA - eA);
   const deltaB = kB * (sB - eB);
 
-  // Re-normalise so A's gain exactly equals B's loss (zero-sum), the invariant
-  // the rest of the app (leaderboards, displays) relies on.
-  const drift = (deltaA + deltaB) / 2;
-  const normDeltaA = deltaA - drift;
-  const normDeltaB = deltaB - drift;
-
   return {
-    ratingA: Math.round(ratingA + normDeltaA),
-    ratingB: Math.round(ratingB + normDeltaB),
-    deltaA: Math.round(normDeltaA),
-    deltaB: Math.round(normDeltaB),
+    ratingA: Math.round(ratingA + deltaA),
+    ratingB: Math.round(ratingB + deltaB),
+    deltaA: Math.round(deltaA),
+    deltaB: Math.round(deltaB),
   };
 }
