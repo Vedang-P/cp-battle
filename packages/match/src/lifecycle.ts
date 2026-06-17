@@ -8,13 +8,13 @@
 
 import { db, type Difficulty, type Prisma } from '@cp-battle/db';
 import { updateRatings, type GameResult } from '@cp-battle/elo';
-import { MATCH_CONFIG } from './config.js';
+import { MATCH_CONFIG } from './config';
 import {
   decideOutcome,
   problemScore,
   tallyPlayer,
   type ProblemScoreInput,
-} from './scoring.js';
+} from './scoring';
 
 /** Pick one problem per difficulty, avoiding ids the player has seen recently. */
 export async function pickProblemsForMatch(

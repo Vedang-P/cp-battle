@@ -71,6 +71,10 @@ export default function BattlePage() {
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeProblemRef = useRef(activeProblem);
+  activeProblemRef.current = activeProblem;
+  const problemsRef = useRef(problems);
+  problemsRef.current = problems;
 
   // Load match problems
   useEffect(() => {
@@ -133,7 +137,7 @@ export default function BattlePage() {
     socket.on('disconnect', () => setSocketConnected(false));
 
     socket.on('submission:verdict' as any, (payload: SubmissionVerdictPayload) => {
-      if (payload.problemId === problems[activeProblem]?.id) {
+      if (payload.problemId === problemsRef.current[activeProblemRef.current]?.id) {
         setVerdict({
           verdict: payload.verdict,
           passed: payload.passed,
@@ -171,7 +175,7 @@ export default function BattlePage() {
       socket.emit('match:leave', matchId);
       socket.disconnect();
     };
-  }, [matchId, authStatus, session, loadOpponent, problems, activeProblem]);
+  }, [matchId, authStatus, session, loadOpponent]);
 
   // Timer countdown
   useEffect(() => {
@@ -299,6 +303,10 @@ export default function BattlePage() {
   if (matchEnd) {
     const isWinner = matchEnd.winnerId === session?.user?.id;
     const isDraw = !matchEnd.winnerId;
+    // Determine which side the user is on from the scores we've been tracking
+    const isPlayerA = scores.player === matchEnd.scoreA;
+    const myEloDelta = isPlayerA ? matchEnd.eloDeltaA : matchEnd.eloDeltaB;
+    const oppEloDelta = isPlayerA ? matchEnd.eloDeltaB : matchEnd.eloDeltaA;
 
     return (
       <main className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
@@ -325,14 +333,14 @@ export default function BattlePage() {
           <div className="mb-6 flex justify-center gap-8">
             <div className="text-center">
               <div className="text-sm text-gray-400">Your ELO</div>
-              <div className={`text-xl font-bold ${matchEnd.eloDeltaA > 0 ? 'text-ok' : matchEnd.eloDeltaA < 0 ? 'text-bad' : 'text-gray-400'}`}>
-                {matchEnd.eloDeltaA > 0 ? '+' : ''}{matchEnd.eloDeltaA}
+              <div className={`text-xl font-bold ${myEloDelta > 0 ? 'text-ok' : myEloDelta < 0 ? 'text-bad' : 'text-gray-400'}`}>
+                {myEloDelta > 0 ? '+' : ''}{myEloDelta}
               </div>
             </div>
             <div className="text-center">
               <div className="text-sm text-gray-400">Opponent ELO</div>
-              <div className={`text-xl font-bold ${matchEnd.eloDeltaB > 0 ? 'text-ok' : matchEnd.eloDeltaB < 0 ? 'text-bad' : 'text-gray-400'}`}>
-                {matchEnd.eloDeltaB > 0 ? '+' : ''}{matchEnd.eloDeltaB}
+              <div className={`text-xl font-bold ${oppEloDelta > 0 ? 'text-ok' : oppEloDelta < 0 ? 'text-bad' : 'text-gray-400'}`}>
+                {oppEloDelta > 0 ? '+' : ''}{oppEloDelta}
               </div>
             </div>
           </div>

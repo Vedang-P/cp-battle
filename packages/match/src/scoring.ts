@@ -13,7 +13,7 @@
  */
 
 import type { Difficulty } from '@cp-battle/db';
-import { MATCH_CONFIG } from './config.js';
+import { MATCH_CONFIG } from './config';
 
 export interface ProblemScoreInput {
   difficulty: Difficulty;

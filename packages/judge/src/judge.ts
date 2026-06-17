@@ -13,9 +13,9 @@
  * FIRST failing case's category, which matches user expectations on CF/Kattis.
  */
 
-import { isOutputCorrect } from './compare.js';
-import { executeOnce, type PistonRunResult } from './piston.js';
-import type { LanguageConfig } from './languages.js';
+import { isOutputCorrect } from './compare';
+import { executeOnce, type PistonRunResult } from './piston';
+import type { LanguageConfig } from './languages';
 
 export type Verdict = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE';
 
@@ -97,13 +97,29 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
 
   for (let i = 0; i < testCases.length; i++) {
     const tc = testCases[i]!;
-    const result = await executeOnce({
-      language,
-      source,
-      stdin: tc.input,
-      cpuTimeLimitMs: effectiveTimeMs,
-      memoryLimitMb: effectiveMemMb,
-    });
+
+    let result: PistonRunResult;
+    try {
+      result = await executeOnce({
+        language,
+        source,
+        stdin: tc.input,
+        cpuTimeLimitMs: effectiveTimeMs,
+        memoryLimitMb: effectiveMemMb,
+      });
+    } catch (err) {
+      // Piston unavailable — return a clear error instead of crashing
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        verdict: 'CE',
+        passed: 0,
+        total: testCases.length,
+        timeMs: null,
+        memoryKb: null,
+        compileError: `Judge unavailable: ${truncate(msg)}`,
+        runtimeError: null,
+      };
+    }
 
     // Compile error short-circuits the whole submission.
     if (result.compile && result.compile.code !== null && result.compile.code !== 0) {

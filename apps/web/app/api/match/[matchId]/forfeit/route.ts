@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
-import { finalizeMatch } from '@cp-battle/match/lifecycle';
+import { finalizeMatch } from '@cp-battle/match';
 
 export const dynamic = 'force-dynamic';
 

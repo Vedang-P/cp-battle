@@ -13,7 +13,7 @@
  *        compile: { stdout, stderr, code, signal, output } | null }
  */
 
-import type { LanguageConfig } from './languages.js';
+import type { LanguageConfig } from './languages';
 
 const PISTON_URL = process.env.PISTON_URL ?? 'http://localhost:2000';
 
@@ -105,9 +105,8 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
         stderr: data.run?.stderr ?? '',
         code: data.run?.code ?? null,
         signal: data.run?.signal ?? null,
-        // Piston doesn't always populate these; we synthesize them elsewhere if absent.
-        cpu_time_ms: null,
-        memory_bytes: null,
+        cpu_time_ms: data.run?.cpu_time_ms ?? null,
+        memory_bytes: data.run?.memory_bytes ?? null,
       },
     };
   } finally {

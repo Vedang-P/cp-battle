@@ -58,13 +58,15 @@ export async function GET(
       .filter((p) => p.userId === match.playerBId)
       .reduce((s, p) => s + p.scoreEarned, 0);
 
+    const isPlayerA = match.playerAId === user.id;
+
     return NextResponse.json({
       opponent,
       opponentProgress,
       playerProgress,
       scores: {
-        player: opponentId === user.id ? totalB : totalA,
-        opponent: opponentId === user.id ? totalA : totalB,
+        player: isPlayerA ? totalA : totalB,
+        opponent: isPlayerA ? totalB : totalA,
       },
     });
   } catch (e) {

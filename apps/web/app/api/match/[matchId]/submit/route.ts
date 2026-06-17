@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
 import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
+import { MATCH_CONFIG } from '@cp-battle/match';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,7 +124,7 @@ export async function POST(
           status: 'SOLVED',
           solvedAt: new Date(),
           scoreEarned:
-            problem.points - progress.wrongSubmissions * 10,
+            problem.points - progress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty,
         },
       });
 
@@ -141,8 +142,8 @@ export async function POST(
       }
     }
 
-    // If SUBMIT and not AC, increment wrong submissions
-    if (submissionMode === 'SUBMIT' && result.verdict !== 'AC') {
+    // If SUBMIT and not AC, increment wrong submissions (only if not already solved)
+    if (submissionMode === 'SUBMIT' && result.verdict !== 'AC' && progress.status !== 'SOLVED') {
       await db.matchProgress.update({
         where: { id: progress.id },
         data: { wrongSubmissions: { increment: 1 } },

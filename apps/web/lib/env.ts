@@ -1,26 +1,23 @@
-/**
- * Centralised env access for the web app.
- *
- * Validates that required vars are present at module load so a misconfigured
- * boot fails loudly with a clear message instead of a cryptic 500 later.
- * Client-bundled code must NOT import this (it references server-only secrets).
- */
+function optional(name: string, fallback: string): string {
+  return process.env[name]?.trim() || fallback;
+}
 
 function required(name: string): string {
   const v = process.env[name];
   if (!v || v.trim() === '') {
-    throw new Error(`Missing required env var: ${name}. Copy .env.example to .env and fill it in.`);
+    console.warn(`[env] Missing env var: ${name}, using empty string fallback`);
+    return '';
   }
   return v;
 }
 
 export const env = {
-  appUrl: required('APP_URL'),
-  databaseUrl: required('DATABASE_URL'),
-  redisUrl: required('REDIS_URL'),
-  pistonUrl: process.env.PISTON_URL ?? 'http://localhost:2000',
-  authSecret: required('AUTH_SECRET'),
-  nextauthUrl: required('NEXTAUTH_URL'),
-  realtimeCorsOrigin: process.env.REALTIME_CORS_ORIGIN ?? 'http://localhost:3000',
-  judgeConcurrency: Number(process.env.JUDGE_CONCURRENCY ?? 4),
+  get appUrl() { return optional('APP_URL', 'http://localhost:3000'); },
+  get databaseUrl() { return required('DATABASE_URL'); },
+  get redisUrl() { return optional('REDIS_URL', 'redis://localhost:6379'); },
+  get pistonUrl() { return optional('PISTON_URL', 'http://localhost:2000'); },
+  get authSecret() { return optional('AUTH_SECRET', optional('NEXTAUTH_SECRET', 'dev-secret-change-me')); },
+  get nextauthUrl() { return optional('NEXTAUTH_URL', 'http://localhost:3000'); },
+  get realtimeCorsOrigin() { return optional('REALTIME_CORS_ORIGIN', 'http://localhost:3000'); },
+  get judgeConcurrency() { return Number(process.env.JUDGE_CONCURRENCY ?? 4); },
 };

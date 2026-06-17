@@ -10,7 +10,7 @@
  * for now, but this keeps us safe under horizontal scaling.
  */
 
-import { matchmakingWindow } from './config.js';
+import { matchmakingWindow } from './config';
 
 export const QUEUE_KEY = 'cpb:matchmaking:queue';
 export const QUEUE_LOCK_KEY = 'cpb:matchmaking:lock';

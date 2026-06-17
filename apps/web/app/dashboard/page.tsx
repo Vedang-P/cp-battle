@@ -50,6 +50,8 @@ export default function DashboardPage() {
         setProfile(p);
         setHistory(h);
         setLoading(false);
+      }).catch(() => {
+        setLoading(false);
       });
     }
   }, [status, router]);
