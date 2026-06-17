@@ -6,9 +6,9 @@
  *
  * Handles:
  * - Auth-verified room joins
- * - Match finalization on timer expiry
- * - Forfeit handling
- * - Heartbeat-based zombie detection
+ * - Timer sync via heartbeat
+ * - HTTP bridge for other processes to emit events (POST /emit)
+ * - Disconnect cleanup
  */
 
 import { createServer } from 'node:http';
@@ -27,11 +27,40 @@ interface AuthenticatedSocket extends Socket {
 }
 
 const httpServer = createServer((req, res) => {
+  // Health check
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
     return;
   }
+
+  // HTTP bridge: other processes POST events here to be emitted via Socket.IO
+  if (req.url === '/emit' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { room, event, payload } = JSON.parse(body) as {
+          room: string;
+          event: string;
+          payload: unknown;
+        };
+        if (!room || !event) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing room or event' }));
+          return;
+        }
+        io.to(room).emit(event as any, payload);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(404);
   res.end();
 });
@@ -111,15 +140,14 @@ io.on('connection', (socket: AuthenticatedSocket) => {
   });
 
   socket.on('match:heartbeat', (matchId) => {
-    // Look up actual match end time
     db.match.findUnique({ where: { id: matchId }, select: { endsAt: true } })
       .then((match) => {
         const endsAt = match?.endsAt ?? new Date();
         const remainingMs = Math.max(0, endsAt.getTime() - Date.now());
-        socket.emit('timer:sync' as any, {
+        socket.emit('timer:sync', {
           endsAt: endsAt.toISOString(),
           remainingMs,
-        } as any);
+        });
       })
       .catch(() => {});
   });

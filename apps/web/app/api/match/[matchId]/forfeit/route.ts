@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
 import { finalizeMatch } from '@cp-battle/match';
+import { emitToMatch } from '@/lib/socket';
+import type { MatchEndPayload } from '@cp-battle/realtime';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +33,22 @@ export async function POST(
       reason: 'forfeit',
       forfeiterId: user.id,
     });
+
+    // Fetch updated match data for the end event
+    const updatedMatch = await db.match.findUnique({ where: { id: matchId } });
+    if (updatedMatch) {
+      const endPayload: MatchEndPayload = {
+        matchId,
+        status: 'COMPLETED',
+        winnerId: updatedMatch.winnerId,
+        scoreA: updatedMatch.scoreA,
+        scoreB: updatedMatch.scoreB,
+        eloDeltaA: updatedMatch.eloDeltaA,
+        eloDeltaB: updatedMatch.eloDeltaB,
+        reason: 'forfeit',
+      };
+      await emitToMatch(matchId, 'match:end', endPayload);
+    }
 
     return NextResponse.json(result);
   } catch (e) {

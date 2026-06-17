@@ -5,8 +5,37 @@ import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
 import { MATCH_CONFIG, type MatchModeType } from '@cp-battle/match';
 import { finalizeMatch } from '@cp-battle/match';
+import { emitToMatch } from '@/lib/socket';
+import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
 
 export const dynamic = 'force-dynamic';
+
+/** Build an OpponentSnapshot for a player. */
+async function buildOpponentSnapshot(matchId: string, userId: string, totalProblems: number): Promise<OpponentSnapshot> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, username: true } });
+  const progress = await db.matchProgress.findMany({
+    where: { matchId, userId },
+    orderBy: { problemOrder: 'asc' },
+  });
+  const solvedCount = progress.filter((p) => p.status === 'SOLVED').length;
+  const score = progress.reduce((sum, p) => sum + p.scoreEarned, 0);
+
+  return {
+    userId,
+    username: user?.username ?? 'Unknown',
+    score,
+    problems: progress.map((p) => ({
+      problemOrder: p.problemOrder,
+      status: p.status as 'LOCKED' | 'UNLOCKED' | 'SOLVED',
+      passed: null,
+      total: null,
+      wrongSubmissions: p.wrongSubmissions,
+    })),
+    raceProgress: totalProblems > 0 ? solvedCount / totalProblems : 0,
+    solvedCount,
+    totalProblems,
+  };
+}
 
 export async function POST(
   req: Request,
@@ -113,7 +142,6 @@ export async function POST(
         memoryLimitMb: problem.memoryLimitMb,
       });
     } catch (judgeErr) {
-      // Update submission to reflect judge failure, not leave it stuck as RUNNING
       const msg = judgeErr instanceof Error ? judgeErr.message : String(judgeErr);
       await db.submission.update({
         where: { id: submission.id },
@@ -178,7 +206,7 @@ export async function POST(
           nextProblem = nextProb ? { slug: nextProb.slug, problemId: nextProb.id, problemOrder: nextProgress.problemOrder } : null;
         }
 
-        // Check for early finish — re-check after marking current as SOLVED
+        // Check for early finish
         const updatedProgress = await tx.matchProgress.findMany({
           where: { matchId: match.id, userId: user.id },
         });
@@ -188,7 +216,6 @@ export async function POST(
           earlyFinish = true;
           matchStatus = 'COMPLETED';
           winnerId = user.id;
-          // Note: full finalization happens outside this transaction
         }
       }
 
@@ -203,7 +230,7 @@ export async function POST(
       return { earlyFinish, matchStatus, nextProblem, winnerId };
     });
 
-    // If early finish was detected, finalize the match (in its own transaction)
+    // If early finish was detected, finalize the match
     if (postJudgeResult.earlyFinish) {
       try {
         const finalResult = await finalizeMatch({
@@ -211,9 +238,57 @@ export async function POST(
           reason: 'early_finish',
         });
         postJudgeResult.winnerId = finalResult?.winnerId ?? user.id;
+
+        // Emit match:end to both players
+        const matchData = await db.match.findUnique({ where: { id: matchId } });
+        if (matchData) {
+          const endPayload: MatchEndPayload = {
+            matchId,
+            status: 'COMPLETED',
+            winnerId: matchData.winnerId,
+            scoreA: matchData.scoreA,
+            scoreB: matchData.scoreB,
+            eloDeltaA: matchData.eloDeltaA,
+            eloDeltaB: matchData.eloDeltaB,
+            reason: 'early_finish',
+          };
+          await emitToMatch(matchId, 'match:end', endPayload);
+        }
       } catch (e) {
         console.error('[submit] early finish finalization failed:', e);
       }
+    }
+
+    // --- Emit Socket.IO events ---
+
+    // 1. Emit submission verdict to the match room (both players see it)
+    const verdictPayload: SubmissionVerdictPayload = {
+      matchId,
+      submissionId: submission.id,
+      problemId,
+      problemOrder: progress.problemOrder,
+      verdict: result.verdict as SubmissionVerdictPayload['verdict'],
+      passed: result.passed,
+      total: result.total,
+      timeMs: result.timeMs,
+      memoryKb: result.memoryKb,
+      error: result.compileError ?? result.runtimeError ?? undefined,
+    };
+    await emitToMatch(matchId, 'submission:verdict', verdictPayload);
+
+    // 2. Emit opponent progress snapshot to the match room
+    const opponentId = user.id === match.playerAId ? match.playerBId : match.playerAId;
+    const playerSnapshot = await buildOpponentSnapshot(matchId, user.id, match.totalProblems);
+    const opponentSnapshot = await buildOpponentSnapshot(matchId, opponentId, match.totalProblems);
+    await emitToMatch(matchId, 'opponent:progress', playerSnapshot);
+    await emitToMatch(matchId, 'opponent:progress', opponentSnapshot);
+
+    // 3. If a problem was unlocked, notify the submitting player
+    if (postJudgeResult.nextProblem) {
+      const { emitSocketEvent } = await import('@/lib/socket');
+      await emitSocketEvent(`user:${user.id}`, 'problem:unlocked', {
+        problemOrder: postJudgeResult.nextProblem.problemOrder,
+      });
     }
 
     return NextResponse.json({

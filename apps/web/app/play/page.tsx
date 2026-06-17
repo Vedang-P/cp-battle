@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { MatchmakingRadar } from '@/components/MatchmakingRadar';
+import { resumeAudio, playMatchFound } from '@/lib/sounds';
 
 type QueueStatus = 'idle' | 'queued' | 'in_match';
 
@@ -42,6 +44,7 @@ export default function PlayPage() {
       if (data.status === 'in_match') {
         if (pollRef.current) clearInterval(pollRef.current);
         if (intervalRef.current) clearInterval(intervalRef.current);
+        playMatchFound();
         router.push(`/battle/${data.match.id}`);
       }
     }, 1000);
@@ -61,6 +64,7 @@ export default function PlayPage() {
 
   const joinQueue = useCallback(async () => {
     setError('');
+    resumeAudio();
     try {
       const res = await fetch('/api/match/join', { method: 'POST' });
       const data = await res.json();
@@ -76,12 +80,6 @@ export default function PlayPage() {
     setQueueStatus('idle');
     setQueueTime(0);
   }, []);
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
 
   return (
     <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
@@ -106,16 +104,7 @@ export default function PlayPage() {
 
           {queueStatus === 'queued' && (
             <div className="space-y-4">
-              <div className="rounded-lg border border-border-subtle bg-bg-elevated p-6">
-                <div className="mb-2 text-xs text-text-muted">Searching</div>
-                <div className="font-mono text-3xl font-semibold text-text-primary tabular-nums">
-                  {formatTime(queueTime)}
-                </div>
-              </div>
-              <div className="flex items-center justify-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
-                <span className="text-xs text-text-muted">Matching by ELO</span>
-              </div>
+              <MatchmakingRadar queueTime={queueTime} />
               <button onClick={leaveQueue} className="btn-ghost w-full h-9 text-sm">
                 Leave queue
               </button>

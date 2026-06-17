@@ -8,7 +8,9 @@ import dynamic from 'next/dynamic';
 import ReactMarkdown from 'react-markdown';
 import type { MatchEndPayload, SubmissionVerdictPayload, OpponentSnapshot } from '@cp-battle/realtime';
 import RaceTrack from '@/components/RaceTrack';
+import { ConfettiCanvas } from '@/components/Confetti';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { resumeAudio, playJudged, playVictory, playDefeat, playProblemSolved, playOpponentSolved } from '@/lib/sounds';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
@@ -61,14 +63,15 @@ export default function BattlePage() {
   const [remainingMs, setRemainingMs] = useState(0);
   const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
   const [opponentName, setOpponentName] = useState('Opponent');
-  const [opponentProgress, setOpponentProgress] = useState<any[]>([]);
   const [scores, setScores] = useState({ player: 0, opponent: 0 });
   const [raceProgress, setRaceProgress] = useState({ player: 0, opponent: 0 });
   const [solvedCount, setSolvedCount] = useState({ player: 0, opponent: 0 });
   const [totalProblems, setTotalProblems] = useState(3);
   const [outputTab, setOutputTab] = useState<'result' | 'description'>('result');
-  const [socketConnected, setSocketConnected] = useState(false);
   const [matchMode, setMatchMode] = useState('SPRINT');
+  const [eloDelta, setEloDelta] = useState(0);
+  const [eloAnimating, setEloAnimating] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -76,7 +79,9 @@ export default function BattlePage() {
   activeProblemRef.current = activeProblem;
   const problemsRef = useRef(problems);
   problemsRef.current = problems;
+  const myUserId = (session?.user as any)?.id;
 
+  // Load match problems via REST (initial load only)
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
       router.push('/signin?callbackUrl=/battle/' + matchId);
@@ -99,11 +104,11 @@ export default function BattlePage() {
       .catch(() => router.push('/play'));
   }, [matchId, authStatus, router]);
 
-  const loadOpponent = useCallback(() => {
+  // Load opponent data (initial fetch only — updates come via socket)
+  useEffect(() => {
     fetch(`/api/match/${matchId}/opponent`)
       .then((r) => r.json())
       .then((data) => {
-        setOpponentProgress(data.opponentProgress || []);
         setScores(data.scores || { player: 0, opponent: 0 });
         setRaceProgress(data.raceProgress || { player: 0, opponent: 0 });
         setSolvedCount(data.solvedCount || { player: 0, opponent: 0 });
@@ -113,12 +118,7 @@ export default function BattlePage() {
       .catch(() => {});
   }, [matchId]);
 
-  useEffect(() => {
-    loadOpponent();
-    const interval = setInterval(loadOpponent, 3000);
-    return () => clearInterval(interval);
-  }, [loadOpponent]);
-
+  // Socket.IO connection — the single source of truth for real-time events
   useEffect(() => {
     if (authStatus !== 'authenticated' || !session?.user) return;
 
@@ -130,12 +130,21 @@ export default function BattlePage() {
     );
 
     socket.on('connect', () => {
-      setSocketConnected(true);
       socket.emit('match:join', matchId, () => {});
     });
 
-    socket.on('disconnect', () => setSocketConnected(false));
+    // Match start — opponent data delivered here
+    socket.on('match:start' as any, (payload: any) => {
+      if (payload.opponent) {
+        setOpponentName(payload.opponent.username);
+      }
+      if (payload.endsAt) {
+        const endsAt = new Date(payload.endsAt).getTime();
+        startTimer(endsAt);
+      }
+    });
 
+    // Submission verdict — YOUR submission result
     socket.on('submission:verdict' as any, (payload: SubmissionVerdictPayload) => {
       if (payload.problemId === problemsRef.current[activeProblemRef.current]?.id) {
         setVerdict({
@@ -146,31 +155,65 @@ export default function BattlePage() {
           timeMs: payload.timeMs ?? undefined,
           memoryKb: payload.memoryKb ?? undefined,
         });
+        playJudged(payload.verdict);
       }
-      loadOpponent();
     });
 
+    // Opponent progress — the "pressure" feed
     socket.on('opponent:progress' as any, (payload: OpponentSnapshot) => {
-      if (payload.raceProgress !== undefined) {
+      // Only update if this is the OPPONENT's data
+      if (payload.userId !== myUserId) {
         setRaceProgress((prev) => ({ ...prev, opponent: payload.raceProgress }));
-      }
-      if (payload.solvedCount !== undefined) {
         setSolvedCount((prev) => ({ ...prev, opponent: payload.solvedCount }));
+        setScores((prev) => ({ ...prev, opponent: payload.score }));
+        playOpponentSolved();
+      } else {
+        // Our own data updated
+        setRaceProgress((prev) => ({ ...prev, player: payload.raceProgress }));
+        setSolvedCount((prev) => ({ ...prev, player: payload.solvedCount }));
+        setScores((prev) => ({ ...prev, player: payload.score }));
       }
     });
 
+    // Problem unlocked for us
+    socket.on('problem:unlocked' as any, (payload: { problemOrder: number }) => {
+      playProblemSolved();
+      // Reload problems to get updated progress
+      fetch(`/api/match/${matchId}/problems`)
+        .then((r) => r.json())
+        .then((data) => {
+          setProblems(data.problems);
+          // Auto-advance to the unlocked problem
+          const unlocked = data.problems.find((p: Problem) => p.progress.status === 'UNLOCKED');
+          if (unlocked) {
+            setActiveProblem(data.problems.indexOf(unlocked));
+            setCode(unlocked.starterCode[language] || '');
+            setVerdict(null);
+          }
+        });
+    });
+
+    // Timer sync
     socket.on('timer:sync' as any, (payload: { endsAt: string; remainingMs: number }) => {
       setRemainingMs(payload.remainingMs);
     });
 
+    // Match end
     socket.on('match:end' as any, (payload: MatchEndPayload) => {
       setMatchEnd(payload);
-    });
-
-    socket.on('problem:unlocked' as any, () => {
-      fetch(`/api/match/${matchId}/problems`)
-        .then((r) => r.json())
-        .then((data) => setProblems(data.problems));
+      const isWinner = payload.winnerId === myUserId;
+      const isDraw = !payload.winnerId;
+      if (isWinner) {
+        setShowConfetti(true);
+        playVictory();
+      } else if (!isDraw) {
+        playDefeat();
+      }
+      // Animate ELO delta
+      const isPlayerA = payload.scoreA >= payload.scoreB;
+      const myDelta = isPlayerA ? payload.eloDeltaA : payload.eloDeltaB;
+      setEloDelta(myDelta);
+      setEloAnimating(true);
     });
 
     socketRef.current = socket;
@@ -179,44 +222,39 @@ export default function BattlePage() {
       socket.emit('match:leave', matchId);
       socket.disconnect();
     };
-  }, [matchId, authStatus, session, loadOpponent]);
+  }, [matchId, authStatus, session, myUserId, language]);
 
+  // Timer management
+  const startTimer = useCallback((endsAtMs: number) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const update = () => {
+      const remaining = Math.max(0, endsAtMs - Date.now());
+      setRemainingMs(remaining);
+      if (remaining <= 0 && timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+    update();
+    timerRef.current = setInterval(update, 1000);
+  }, []);
+
+  // Also start timer from REST on mount (fallback if socket hasn't connected yet)
   useEffect(() => {
     if (matchEnd) return;
-
     fetch('/api/match/status')
       .then((r) => r.json())
       .then((data) => {
         if (data.match?.endsAt) {
-          const endsAt = new Date(data.match.endsAt).getTime();
-          const updateTimer = () => {
-            const remaining = Math.max(0, endsAt - Date.now());
-            setRemainingMs(remaining);
-            if (remaining <= 0) {
-              fetch(`/api/match/${matchId}/result`)
-                .then((r) => r.json())
-                .then((d) => {
-                  if (d.match?.status === 'COMPLETED') {
-                    setMatchEnd({
-                      matchId, status: 'COMPLETED', winnerId: d.match.winnerId,
-                      scoreA: d.match.scoreA, scoreB: d.match.scoreB,
-                      eloDeltaA: d.match.eloDeltaA, eloDeltaB: d.match.eloDeltaB, reason: 'time',
-                    });
-                  }
-                });
-            }
-          };
-          updateTimer();
-          timerRef.current = setInterval(updateTimer, 1000);
+          startTimer(new Date(data.match.endsAt).getTime());
         }
       });
-
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [matchId, matchEnd]);
+  }, [matchEnd, startTimer]);
 
+  // Also poll for match completion as a safety net (catches forfeit from opponent)
   useEffect(() => {
     if (matchEnd) return;
-    const checkCompletion = () => {
+    const check = () => {
       fetch(`/api/match/${matchId}/result`)
         .then((r) => r.json())
         .then((d) => {
@@ -231,7 +269,7 @@ export default function BattlePage() {
         })
         .catch(() => {});
     };
-    const pollRef = setInterval(checkCompletion, 3000);
+    const pollRef = setInterval(check, 5000);
     return () => clearInterval(pollRef);
   }, [matchId, matchEnd]);
 
@@ -254,6 +292,7 @@ export default function BattlePage() {
     if (!current) return;
     setSubmitting(true);
     setVerdict(null);
+    resumeAudio();
 
     try {
       const res = await fetch(`/api/match/${matchId}/submit`, {
@@ -267,30 +306,23 @@ export default function BattlePage() {
           verdict: data.verdict, passed: data.passed, total: data.total,
           error: data.error, timeMs: data.timeMs, memoryKb: data.memoryKb,
         });
-        loadOpponent();
+        playJudged(data.verdict);
+
         if (mode === 'SUBMIT' && data.verdict === 'AC') {
+          playProblemSolved();
+          // Reload problems (socket will also send problem:unlocked, but this is immediate)
           const probRes = await fetch(`/api/match/${matchId}/problems`);
           const probData = await probRes.json();
           setProblems(probData.problems);
           const solvedNow = probData.problems.filter((p: Problem) => p.progress.status === 'SOLVED').length;
           setSolvedCount((prev) => ({ ...prev, player: solvedNow }));
           setRaceProgress((prev) => ({ ...prev, player: solvedNow / probData.totalProblems }));
+
           if (solvedNow >= probData.totalProblems) {
-            setTimeout(() => {
-              fetch(`/api/match/${matchId}/result`)
-                .then((r) => r.json())
-                .then((d) => {
-                  if (d.match?.status === 'COMPLETED') {
-                    setMatchEnd({
-                      matchId, status: 'COMPLETED', winnerId: d.match.winnerId,
-                      scoreA: d.match.scoreA, scoreB: d.match.scoreB,
-                      eloDeltaA: d.match.eloDeltaA, eloDeltaB: d.match.eloDeltaB, reason: 'early_finish',
-                    });
-                  }
-                });
-            }, 1000);
+            // Match will end — wait for socket event
             return;
           }
+
           const nextIdx = probData.problems.findIndex((p: Problem) => p.progress.status === 'UNLOCKED');
           if (nextIdx !== -1) {
             setActiveProblem(nextIdx);
@@ -306,7 +338,7 @@ export default function BattlePage() {
     } finally {
       setSubmitting(false);
     }
-  }, [matchId, problems, activeProblem, language, code, loadOpponent]);
+  }, [matchId, problems, activeProblem, language, code]);
 
   const handleForfeit = useCallback(async () => {
     if (!confirm('Are you sure you want to forfeit?')) return;
@@ -314,64 +346,73 @@ export default function BattlePage() {
     router.push('/dashboard');
   }, [matchId, router]);
 
+  // Animated ELO counter
+  const [displayElo, setDisplayElo] = useState(0);
+  useEffect(() => {
+    if (!eloAnimating) return;
+    const target = eloDelta;
+    const duration = 1500;
+    const start = Date.now();
+    const animate = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayElo(Math.round(target * eased));
+      if (progress < 1) requestAnimationFrame(animate);
+    };
+    animate();
+  }, [eloAnimating, eloDelta]);
+
   // Match end screen
   if (matchEnd) {
-    const isWinner = matchEnd.winnerId === session?.user?.id;
+    const isWinner = matchEnd.winnerId === myUserId;
     const isDraw = !matchEnd.winnerId;
-    const isPlayerA = scores.player === matchEnd.scoreA;
-    const myEloDelta = isPlayerA ? matchEnd.eloDeltaA : matchEnd.eloDeltaB;
-    const oppEloDelta = isPlayerA ? matchEnd.eloDeltaB : matchEnd.eloDeltaA;
 
     return (
-      <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
-        <div className="card w-full max-w-sm p-8 text-center animate-fade-in">
-          <h1
-            className={`text-3xl font-semibold tracking-tight ${
-              isDraw ? 'text-text-secondary' : isWinner ? 'text-success' : 'text-error'
-            }`}
-            style={{ letterSpacing: '-0.03em' }}
-          >
-            {isDraw ? 'Draw' : isWinner ? 'Victory' : 'Defeat'}
-          </h1>
+      <>
+        <ConfettiCanvas active={showConfetti} duration={4000} />
+        <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+          <div className="card w-full max-w-sm p-8 text-center animate-fade-in">
+            <h1
+              className={`text-4xl font-semibold tracking-tight ${
+                isDraw ? 'text-text-secondary' : isWinner ? 'text-success' : 'text-error'
+              }`}
+              style={{ letterSpacing: '-0.04em' }}
+            >
+              {isDraw ? 'Draw' : isWinner ? 'Victory' : 'Defeat'}
+            </h1>
 
-          <div className="mt-3 space-y-1">
-            <div className="text-sm text-text-secondary font-mono tabular-nums">
-              {matchEnd.scoreA} — {matchEnd.scoreB}
-            </div>
-            <div className="text-xs text-text-muted">
-              {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
-            </div>
-          </div>
-
-          <div className="mt-5 flex justify-center gap-8 text-center">
-            <div>
-              <div className="text-xs text-text-muted mb-0.5">You</div>
-              <div className={`text-lg font-semibold tabular-nums ${
-                myEloDelta > 0 ? 'text-success' : myEloDelta < 0 ? 'text-error' : 'text-text-muted'
-              }`}>
-                {myEloDelta > 0 ? '+' : ''}{myEloDelta}
+            <div className="mt-4 space-y-1">
+              <div className="text-sm text-text-secondary font-mono tabular-nums">
+                {matchEnd.scoreA} — {matchEnd.scoreB}
+              </div>
+              <div className="text-xs text-text-muted">
+                {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-text-muted mb-0.5">Opponent</div>
-              <div className={`text-lg font-semibold tabular-nums ${
-                oppEloDelta > 0 ? 'text-success' : oppEloDelta < 0 ? 'text-error' : 'text-text-muted'
-              }`}>
-                {oppEloDelta > 0 ? '+' : ''}{oppEloDelta}
+
+            {/* Animated ELO delta */}
+            <div className="mt-6">
+              <div className="text-xs text-text-muted mb-1">ELO Change</div>
+              <div className={`text-4xl font-semibold tabular-nums ${
+                eloDelta > 0 ? 'text-success' : eloDelta < 0 ? 'text-error' : 'text-text-muted'
+              }`} style={{ letterSpacing: '-0.03em' }}>
+                {eloDelta > 0 ? '+' : ''}{displayElo}
               </div>
             </div>
-          </div>
 
-          <div className="mt-6 flex gap-2">
-            <button onClick={() => router.push('/play')} className="btn-primary flex-1 h-9 text-sm">
-              Play again
-            </button>
-            <button onClick={() => router.push('/dashboard')} className="btn-ghost flex-1 h-9 text-sm">
-              Dashboard
-            </button>
+            <div className="mt-6 flex gap-2">
+              <button onClick={() => router.push('/play')} className="btn-primary flex-1 h-9 text-sm">
+                Play again
+              </button>
+              <button onClick={() => router.push('/dashboard')} className="btn-ghost flex-1 h-9 text-sm">
+                Dashboard
+              </button>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </>
     );
   }
 
