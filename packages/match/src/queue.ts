@@ -21,6 +21,7 @@ export interface QueueEntry {
   userId: string;
   elo: number;
   joinedAtMs: number;
+  mode?: string; // 'SPRINT' | 'PROGRESSIVE'
 }
 
 /** Minimal Redis surface we depend on — implemented by ioredis/redis clients. */
@@ -53,7 +54,7 @@ export async function enqueue(
   await redis.zadd(QUEUE_KEY, entry.elo, entry.userId);
   await redis.set(
     metaKey(entry.userId),
-    JSON.stringify({ elo: entry.elo, joinedAtMs: entry.joinedAtMs }),
+    JSON.stringify({ elo: entry.elo, joinedAtMs: entry.joinedAtMs, mode: entry.mode ?? 'SPRINT' }),
   );
 }
 
@@ -79,19 +80,21 @@ export async function findPair(redis: RedisLike, nowMs: number): Promise<[string
   if (members.length < 4) return null; // need at least 2 players (member+score pairs)
 
   // Hydrate meta for everyone (cheap; queue is small at our scale).
-  const entries: { userId: string; elo: number; joinedAtMs: number }[] = [];
+  const entries: { userId: string; elo: number; joinedAtMs: number; mode: string }[] = [];
   for (let i = 0; i < members.length; i += 2) {
     const userId = members[i]!;
     const score = Number(members[i + 1]);
     const raw = await redis.get(metaKey(userId));
     if (!raw) continue;
-    const meta = JSON.parse(raw) as { elo: number; joinedAtMs: number };
-    entries.push({ userId, elo: score, joinedAtMs: meta.joinedAtMs });
+    const meta = JSON.parse(raw) as { elo: number; joinedAtMs: number; mode?: string };
+    entries.push({ userId, elo: score, joinedAtMs: meta.joinedAtMs, mode: meta.mode ?? 'SPRINT' });
   }
 
   for (let i = 0; i + 1 < entries.length; i++) {
     const a = entries[i]!;
     const b = entries[i + 1]!;
+    // Players must have selected the same mode
+    if (a.mode !== b.mode) continue;
     const waitedA = (nowMs - a.joinedAtMs) / 1000;
     const waitedB = (nowMs - b.joinedAtMs) / 1000;
     const gap = Math.abs(a.elo - b.elo);

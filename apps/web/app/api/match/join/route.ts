@@ -4,14 +4,28 @@ import { redis } from '@/lib/redis';
 import { enqueue, dequeue, QUEUE_KEY } from '@cp-battle/match';
 import { db } from '@cp-battle/db';
 
+// ioredis Redis satisfies RedisLike at runtime; cast to satisfy TS
+const queueRedis = redis as any;
+
 export const dynamic = 'force-dynamic';
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const user = await requireUser();
 
+    // Read optional mode from request body
+    let mode = 'SPRINT';
+    try {
+      const body = await req.json();
+      if (body.mode === 'SPRINT' || body.mode === 'PROGRESSIVE') {
+        mode = body.mode;
+      }
+    } catch {
+      // No body or invalid JSON — default to SPRINT
+    }
+
     // Check if already in queue
-    const score = await redis.zscore(QUEUE_KEY, user.id);
+    const score = await queueRedis.zscore(QUEUE_KEY, user.id);
     if (score !== null) {
       return NextResponse.json({ status: 'already_queued' });
     }
@@ -32,13 +46,14 @@ export async function POST() {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    await enqueue(redis, {
+    await enqueue(queueRedis, {
       userId: user.id,
       elo: dbUser.elo,
       joinedAtMs: Date.now(),
+      mode,
     });
 
-    return NextResponse.json({ status: 'queued' });
+    return NextResponse.json({ status: 'queued', mode });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -50,7 +65,7 @@ export async function POST() {
 export async function DELETE() {
   try {
     const user = await requireUser();
-    await dequeue(redis, user.id);
+    await dequeue(queueRedis, user.id);
     return NextResponse.json({ status: 'dequeued' });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {

@@ -26,6 +26,11 @@ enum Difficulty {
   HARD
 }
 
+enum MatchMode {
+  SPRINT      // 3 problems (2E + 1M), race to finish — default
+  PROGRESSIVE // 8 problems (3E + 3M + 2H), time-based with early finish
+}
+
 enum MatchStatus {
   QUEUING
   IN_PROGRESS
@@ -107,9 +112,6 @@ model Problem {
   updatedAt     DateTime   @updatedAt
 
   testCases     TestCase[]
-  matchesEasy   Match[]    @relation("MatchEasyProblem")
-  matchesMedium Match[]    @relation("MatchMediumProblem")
-  matchesHard   Match[]    @relation("MatchHardProblem")
   progress      MatchProgress[]
   submissions   Submission[]
 
@@ -139,52 +141,46 @@ model TestCase {
 // ---------------------------------------------------------------------------
 
 model Match {
-  id          String      @id @default(cuid())
-  status      MatchStatus @default(QUEUING)
+  id              String      @id @default(cuid())
+  status          MatchStatus @default(QUEUING)
+  mode            MatchMode   @default(SPRINT)
 
-  // Players. Always two. ON RESTRICT: never delete a user with match history;
-  // anonymise instead (keeps leaderboards/leaderboards intact).
-  playerAId   String
-  playerA     User        @relation("MatchPlayerA", fields: [playerAId], references: [id], onDelete: Restrict)
-  playerBId   String
-  playerB     User        @relation("MatchPlayerB", fields: [playerBId], references: [id], onDelete: Restrict)
+  // Players. Always two. ON RESTRICT: never delete a user with match history.
+  playerAId       String
+  playerA         User        @relation("MatchPlayerA", fields: [playerAId], references: [id], onDelete: Restrict)
+  playerBId       String
+  playerB         User        @relation("MatchPlayerB", fields: [playerBId], references: [id], onDelete: Restrict)
 
-  // Problem set for this match. Both players get the SAME three problems.
-  easyId      String
-  easy        Problem     @relation("MatchEasyProblem", fields: [easyId], references: [id])
-  mediumId    String
-  medium      Problem     @relation("MatchMediumProblem", fields: [mediumId], references: [id])
-  hardId      String
-  hard        Problem     @relation("MatchHardProblem", fields: [hardId], references: [id])
+  // Ordered list of problem IDs both players race through independently.
+  problemSequence String[]    // e.g. ["abc","def","ghi"] for SPRINT
+  totalProblems   Int         @default(3)
 
   // Timing. Server-authoritative; the client is just a countdown display.
-  startsAt    DateTime?
-  endsAt      DateTime?
-  durationSec Int         @default(1200)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  durationSec     Int         @default(1200)
 
   // Results. Set once status = COMPLETED.
-  winnerId    String?
-  winner      User?       @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: Restrict)
-  scoreA      Int         @default(0)
-  scoreB      Int         @default(0)
-  eloDeltaA   Int         @default(0)
-  eloDeltaB   Int         @default(0)
-  // Why the match ended, useful for debugging edge cases.
-  endReason   String?
+  winnerId        String?
+  winner          User?       @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+  scoreA          Int         @default(0)
+  scoreB          Int         @default(0)
+  eloDeltaA       Int         @default(0)
+  eloDeltaB       Int         @default(0)
+  endReason       String?
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  progress    MatchProgress[]
-  submissions Submission[]
+  progress        MatchProgress[]
+  submissions     Submission[]
 
   @@index([status])
   @@index([playerAId])
   @@index([playerBId])
 }
 
-// Per-(user, problem) row inside a match. This is what drives the live progress UI
-// and the scoring at match end. There are exactly 3 rows per user per match.
+// Per-(user, problem) row inside a match. Drives the live progress UI and scoring.
 model MatchProgress {
   id              String               @id @default(cuid())
   matchId         String
@@ -193,12 +189,11 @@ model MatchProgress {
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   problemId       String
   problem         Problem              @relation(fields: [problemId], references: [id])
-  difficulty      Difficulty
+  problemOrder    Int                  // 0-based position in the match's problemSequence
   status          ProblemProgressStatus @default(LOCKED)
   unlockedAt      DateTime?
   solvedAt        DateTime?
   wrongSubmissions Int                 @default(0)
-  // Final score for this problem; computed on solve or match end.
   scoreEarned     Int                  @default(0)
 
   createdAt       DateTime             @default(now())

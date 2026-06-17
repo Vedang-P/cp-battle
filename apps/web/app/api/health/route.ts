@@ -1,7 +1,7 @@
 /**
  * Health check endpoint.
  *
- * Probes Postgres, Redis, and Piston so we can tell at a glance which service
+ * Probes Postgres, Redis, and Judge0 so we can tell at a glance which service
  * is misbehaving. Used during Phase 0 bring-up and as a future liveness probe.
  *
  *   GET /api/health -> { status, services: {...}, ts }
@@ -33,7 +33,7 @@ export async function GET() {
       const pong = await redis.ping();
       return pong;
     }),
-    probe('piston', async () => pingPiston()),
+    probe('judge0', async () => pingPiston()),
   ]);
 
   const services = { [pg[0]]: pg[1], [cache[0]]: cache[1], [judge[0]]: judge[1] };

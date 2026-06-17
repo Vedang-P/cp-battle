@@ -1,14 +1,19 @@
 /**
  * Match lifecycle: creation, problem selection, and completion (scoring + ELO).
  *
- * These functions talk to Prisma directly and are the single source of truth
- * for mutating Match + MatchProgress rows. The realtime server calls into
- * here when a match ends.
+ * Two modes:
+ *   SPRINT      — 3 problems (2E + 1M), race to finish. Match ends when one
+ *                 player solves all 3 or time runs out.
+ *   PROGRESSIVE — 8 problems (3E + 3M + 2H), time-based. Match ends when
+ *                 time runs out OR one player finishes all 8.
+ *
+ * Independent progression: both players progress through the same sequence
+ * at their own pace.
  */
 
-import { db, type Difficulty, type Prisma } from '@cp-battle/db';
+import { db, type Difficulty, type Prisma, type MatchMode } from '@cp-battle/db';
 import { updateRatings, type GameResult } from '@cp-battle/elo';
-import { MATCH_CONFIG } from './config';
+import { MATCH_CONFIG, type MatchModeType, modeConfig } from './config';
 import {
   decideOutcome,
   problemScore,
@@ -16,32 +21,50 @@ import {
   type ProblemScoreInput,
 } from './scoring';
 
-/** Pick one problem per difficulty, avoiding ids the player has seen recently. */
+/** Shuffle an array in place (Fisher-Yates). */
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
+}
+
+/**
+ * Pick problems for a match, avoiding ids either player has seen recently.
+ * Returns an ordered list of problem IDs matching the mode's composition.
+ */
 export async function pickProblemsForMatch(
   playerAId: string,
   playerBId: string,
-): Promise<{ easy: string; medium: string; hard: string }> {
+  mode: MatchModeType = 'SPRINT',
+): Promise<string[]> {
+  const cfg = modeConfig(mode);
+
   // Problems either player saw in the last 20 matches — keeps replays fresh.
   const recent = await db.match.findMany({
-    where: { OR: [{ playerAId: { in: [playerAId, playerBId] } }, { playerBId: { in: [playerAId, playerBId] } }] },
+    where: {
+      OR: [
+        { playerAId: { in: [playerAId, playerBId] } },
+        { playerBId: { in: [playerAId, playerBId] } },
+      ],
+    },
     orderBy: { createdAt: 'desc' },
     take: 20,
-    select: { easyId: true, mediumId: true, hardId: true },
+    select: { problemSequence: true },
   });
   const seen = new Set<string>();
   for (const m of recent) {
-    seen.add(m.easyId);
-    seen.add(m.mediumId);
-    seen.add(m.hardId);
+    for (const id of m.problemSequence) seen.add(id);
   }
 
-  const pick = async (difficulty: Difficulty): Promise<string> => {
+  const pick = async (difficulty: Difficulty, exclude: Set<string>): Promise<string> => {
     const candidate = await db.problem.findFirst({
-      where: { difficulty, isVisible: true, id: { notIn: [...seen] } },
-      orderBy: { createdAt: 'asc' }, // rotate through oldest first
+      where: { difficulty, isVisible: true, id: { notIn: [...exclude] } },
+      orderBy: { createdAt: 'asc' },
     });
     if (candidate) {
-      seen.add(candidate.id);
+      exclude.add(candidate.id);
       return candidate.id;
     }
     // Fallback: ignore "seen" if we've exhausted the pool.
@@ -49,52 +72,84 @@ export async function pickProblemsForMatch(
       where: { difficulty, isVisible: true },
       orderBy: { createdAt: 'asc' },
     });
-    if (!fallback) throw new Error(`No visible ${difficulty} problem available to seed match`);
-    seen.add(fallback.id);
+    if (!fallback) throw new Error(`No visible ${difficulty} problem available`);
+    exclude.add(fallback.id);
     return fallback.id;
   };
 
-  const [easy, medium, hard] = await Promise.all([
-    pick('EASY'),
-    pick('MEDIUM'),
-    pick('HARD'),
-  ]);
-  return { easy, medium, hard };
+  const sequence: string[] = [];
+  const used = new Set(seen);
+
+  for (const tier of cfg.composition) {
+    for (let i = 0; i < tier.count; i++) {
+      sequence.push(await pick(tier.difficulty, used));
+    }
+  }
+
+  // Shuffle within the sequence so difficulty order varies.
+  // But keep the general tier structure (all easies before mediums, etc.)
+  // by shuffling within contiguous blocks of the same difficulty.
+  const blocks: string[][] = [];
+  let currentBlock: string[] = [];
+  let currentDiff = cfg.composition[0]!.difficulty;
+  for (const id of sequence) {
+    const prob = await db.problem.findUnique({ where: { id }, select: { difficulty: true } });
+    if (prob?.difficulty !== currentDiff) {
+      if (currentBlock.length > 0) blocks.push(currentBlock);
+      currentBlock = [id];
+      currentDiff = prob?.difficulty ?? currentDiff;
+    } else {
+      currentBlock.push(id);
+    }
+  }
+  if (currentBlock.length > 0) blocks.push(currentBlock);
+
+  const result: string[] = [];
+  for (const block of blocks) {
+    result.push(...shuffle(block));
+  }
+  return result;
 }
 
 /** Create an in-progress match between two players. */
-export async function createMatch(playerAId: string, playerBId: string): Promise<string> {
-  const problems = await pickProblemsForMatch(playerAId, playerBId);
+export async function createMatch(
+  playerAId: string,
+  playerBId: string,
+  mode: MatchModeType = 'SPRINT',
+): Promise<string> {
+  const cfg = modeConfig(mode);
+  const problemSequence = await pickProblemsForMatch(playerAId, playerBId, mode);
   const now = new Date();
-  const ends = new Date(now.getTime() + MATCH_CONFIG.durationSeconds * 1000);
+  const ends = new Date(now.getTime() + cfg.durationSeconds * 1000);
 
-  // One transaction: create match + 6 MatchProgress rows (3 per player).
+  // Build MatchProgress rows: first problem UNLOCKED, rest LOCKED.
+  const progressRows = [];
+  for (const userId of [playerAId, playerBId]) {
+    for (let i = 0; i < problemSequence.length; i++) {
+      progressRows.push({
+        userId,
+        problemId: problemSequence[i]!,
+        problemOrder: i,
+        status: i === 0 ? ('UNLOCKED' as const) : ('LOCKED' as const),
+        unlockedAt: i === 0 ? now : undefined,
+      });
+    }
+  }
+
   const match = await db.$transaction(async (tx) => {
     const m = await tx.match.create({
       data: {
         playerAId,
         playerBId,
-        easyId: problems.easy,
-        mediumId: problems.medium,
-        hardId: problems.hard,
+        mode: mode as MatchMode,
+        problemSequence,
+        totalProblems: cfg.totalProblems,
         status: 'IN_PROGRESS',
         startsAt: now,
         endsAt: ends,
-        durationSec: MATCH_CONFIG.durationSeconds,
-        progress: {
-          create: [
-            // Player A: easy unlocked, medium/hard locked.
-            { userId: playerAId, problemId: problems.easy, difficulty: 'EASY', status: 'UNLOCKED', unlockedAt: now },
-            { userId: playerAId, problemId: problems.medium, difficulty: 'MEDIUM', status: 'LOCKED' },
-            { userId: playerAId, problemId: problems.hard, difficulty: 'HARD', status: 'LOCKED' },
-            // Player B: same.
-            { userId: playerBId, problemId: problems.easy, difficulty: 'EASY', status: 'UNLOCKED', unlockedAt: now },
-            { userId: playerBId, problemId: problems.medium, difficulty: 'MEDIUM', status: 'LOCKED' },
-            { userId: playerBId, problemId: problems.hard, difficulty: 'HARD', status: 'LOCKED' },
-          ],
-        },
+        durationSec: cfg.durationSeconds,
+        progress: { create: progressRows },
       },
-      include: { progress: true },
     });
     return m;
   });
@@ -104,7 +159,7 @@ export async function createMatch(playerAId: string, playerBId: string): Promise
 
 export interface FinalizeInput {
   matchId: string;
-  reason: 'time' | 'both_solved' | 'forfeit' | 'disconnect' | 'cancelled';
+  reason: 'time' | 'both_solved' | 'forfeit' | 'disconnect' | 'cancelled' | 'early_finish';
   /** When forfeit/disconnect: the user who did NOT forfeit wins. */
   forfeiterId?: string;
 }
@@ -147,38 +202,50 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       };
     }
 
+    const mode = match.mode as MatchModeType;
     const startMs = match.startsAt ? match.startsAt.getTime() : Date.now();
+
+    // Build difficulty lookup from problemSequence
+    const problemIds = match.problemSequence;
+    const problems = await tx.problem.findMany({
+      where: { id: { in: problemIds } },
+      select: { id: true, difficulty: true },
+    });
+    const difficultyMap = new Map(problems.map((p) => [p.id, p.difficulty]));
 
     const toInputs = (userId: string): ProblemScoreInput[] => {
       const rows = match.progress.filter((p) => p.userId === userId);
-      const difficulties: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
-      return difficulties.map((d) => {
-        const row = rows.find((r) => r.difficulty === d);
-        return {
-          difficulty: d,
-          status: row?.status ?? 'LOCKED',
-          wrongSubmissions: row?.wrongSubmissions ?? 0,
-          solvedAtMs: row?.solvedAt ? row.solvedAt.getTime() : null,
-        };
-      });
+      return rows
+        .sort((a, b) => a.problemOrder - b.problemOrder)
+        .map((row) => ({
+          difficulty: difficultyMap.get(row.problemId) as Difficulty,
+          status: row.status,
+          wrongSubmissions: row.wrongSubmissions,
+          solvedAtMs: row.solvedAt ? row.solvedAt.getTime() : null,
+        }));
     };
 
-    // Write per-problem scoreEarned for both players (for history detail).
+    // Write per-problem scoreEarned for both players.
     for (const userId of [match.playerAId, match.playerBId]) {
       const inputs = toInputs(userId);
-      for (const inp of inputs) {
-        const earned = problemScore(inp);
-        await tx.matchProgress.updateMany({
-          where: { matchId: match.id, userId, difficulty: inp.difficulty },
-          data: { scoreEarned: earned },
-        });
+      const userProgress = match.progress.filter((p) => p.userId === userId);
+      for (let i = 0; i < inputs.length; i++) {
+        const earned = problemScore(inputs[i]!);
+        const progRow = userProgress.find((p) => p.problemOrder === i);
+        if (progRow) {
+          await tx.matchProgress.update({
+            where: { id: progRow.id },
+            data: { scoreEarned: earned },
+          });
+        }
       }
     }
 
     const tallyA = tallyPlayer(toInputs(match.playerAId), startMs);
     const tallyB = tallyPlayer(toInputs(match.playerBId), startMs);
 
-    let outcome = decideOutcome(tallyA, tallyB);
+    let outcome = decideOutcome(tallyA, tallyB, mode);
+
     // Forfeit overrides: the non-forfeiter wins regardless of score.
     if (input.reason === 'forfeit' || input.reason === 'disconnect') {
       if (input.forfeiterId === match.playerAId) outcome = 'B_WINS';
@@ -186,9 +253,13 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
     }
 
     const winnerId =
-      outcome === 'A_WINS' ? match.playerAId : outcome === 'B_WINS' ? match.playerBId : null;
+      outcome === 'A_WINS'
+        ? match.playerAId
+        : outcome === 'B_WINS'
+          ? match.playerBId
+          : null;
 
-    // ELO. resultFromA derived from outcome.
+    // ELO
     const resultFromA: GameResult =
       outcome === 'A_WINS' ? 'win' : outcome === 'B_WINS' ? 'loss' : 'draw';
     const elo = updateRatings(
@@ -199,7 +270,6 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       match.playerB.gamesPlayed,
     );
 
-    // Persist match + user rating/record changes together.
     await tx.match.update({
       where: { id: match.id },
       data: {
@@ -217,7 +287,7 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
     const applyUserRecord = async (
       userId: string,
       newElo: number,
-      won: boolean | null, // null = draw
+      won: boolean | null,
       gamesBefore: number,
     ) => {
       await tx.user.update({
@@ -232,8 +302,18 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       });
     };
 
-    await applyUserRecord(match.playerAId, elo.ratingA, outcome === 'A_WINS', match.playerA.gamesPlayed);
-    await applyUserRecord(match.playerBId, elo.ratingB, outcome === 'B_WINS', match.playerB.gamesPlayed);
+    await applyUserRecord(
+      match.playerAId,
+      elo.ratingA,
+      outcome === 'DRAW' ? null : outcome === 'A_WINS',
+      match.playerA.gamesPlayed,
+    );
+    await applyUserRecord(
+      match.playerBId,
+      elo.ratingB,
+      outcome === 'DRAW' ? null : outcome === 'B_WINS',
+      match.playerB.gamesPlayed,
+    );
 
     return {
       matchId: match.id,

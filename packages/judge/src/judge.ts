@@ -14,7 +14,7 @@
  */
 
 import { isOutputCorrect } from './compare';
-import { executeOnce, type PistonRunResult } from './piston';
+import { executeOnce, type PistonRunResult } from './judge0';
 import type { LanguageConfig } from './languages';
 
 export type Verdict = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE';

@@ -16,9 +16,6 @@ export async function GET(
       where: { id: matchId },
       include: {
         progress: { where: { userId: user.id } },
-        easy: true,
-        medium: true,
-        hard: true,
       },
     });
 
@@ -30,32 +27,43 @@ export async function GET(
       return NextResponse.json({ error: 'Not your match' }, { status: 403 });
     }
 
-    const progressMap = new Map(match.progress.map((p) => [p.difficulty, p]));
+    // Load all problems in the sequence
+    const problemIds = match.problemSequence;
+    const dbProblems = await db.problem.findMany({
+      where: { id: { in: problemIds } },
+    });
+    const problemMap = new Map(dbProblems.map((p) => [p.id, p]));
 
-    const problems = [
-      { ...match.easy, progress: progressMap.get('EASY') ?? null },
-      { ...match.medium, progress: progressMap.get('MEDIUM') ?? null },
-      { ...match.hard, progress: progressMap.get('HARD') ?? null },
-    ].map((p) => ({
-      id: p.id,
-      slug: p.slug,
-      title: p.title,
-      difficulty: p.difficulty,
-      descriptionMd: p.descriptionMd,
-      timeLimitMs: p.timeLimitMs,
-      memoryLimitMb: p.memoryLimitMb,
-      points: p.points,
-      starterCode: p.starterCode,
-      progress: p.progress
-        ? {
-            status: p.progress.status,
-            wrongSubmissions: p.progress.wrongSubmissions,
-            scoreEarned: p.progress.scoreEarned,
-          }
-        : { status: 'LOCKED', wrongSubmissions: 0, scoreEarned: 0 },
-    }));
+    const progressMap = new Map(match.progress.map((p) => [p.problemId, p]));
 
-    return NextResponse.json({ problems });
+    const problems = problemIds.map((id, index) => {
+      const p = problemMap.get(id);
+      const prog = progressMap.get(id);
+      return {
+        id: p?.id ?? id,
+        slug: p?.slug ?? '',
+        title: p?.title ?? '',
+        descriptionMd: p?.descriptionMd ?? '',
+        timeLimitMs: p?.timeLimitMs ?? 2000,
+        memoryLimitMb: p?.memoryLimitMb ?? 256,
+        points: p?.points ?? 100,
+        starterCode: p?.starterCode ?? {},
+        problemOrder: index,
+        progress: prog
+          ? {
+              status: prog.status,
+              wrongSubmissions: prog.wrongSubmissions,
+              scoreEarned: prog.scoreEarned,
+            }
+          : { status: 'LOCKED', wrongSubmissions: 0, scoreEarned: 0 },
+      };
+    });
+
+    return NextResponse.json({
+      problems,
+      mode: match.mode,
+      totalProblems: match.totalProblems,
+    });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

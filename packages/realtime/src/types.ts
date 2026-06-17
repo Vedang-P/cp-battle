@@ -23,7 +23,7 @@ export const userRoom = (userId: string): string => `user:${userId}`;
 // Primitives shared across events
 // ---------------------------------------------------------------------------
 
-export type ProblemDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+export type MatchMode = 'SPRINT' | 'PROGRESSIVE';
 
 export type SubmissionVerdict =
   | 'PENDING'
@@ -41,27 +41,32 @@ export type MatchStatus = 'QUEUING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 export type ProblemProgressStatus = 'LOCKED' | 'UNLOCKED' | 'SOLVED';
 
 export interface ProblemProgressPublic {
-  difficulty: ProblemDifficulty;
+  problemOrder: number;
   status: ProblemProgressStatus;
   /** Test cases passed so far on the player's latest submission, if any. */
   passed: number | null;
   /** Total test cases for this problem. */
   total: number | null;
-  /** Wrong (non-AC) submissions on this problem. Drives the pressure factor. */
+  /** Wrong (non-AC) submissions on this problem. */
   wrongSubmissions: number;
 }
 
 /**
  * The sanitized view of a player's progress shown to their OPPONENT.
  * Critically: contains NO code, NO per-test input/expected, NO submission text.
- * This is the value that flows over `opponent:progress`.
  */
 export interface OpponentSnapshot {
   userId: string;
   username: string;
   score: number;
-  /** Per-problem progress, one entry per difficulty in the match. */
+  /** Per-problem progress, one entry per problem in the match. */
   problems: ProblemProgressPublic[];
+  /** Race car position: 0.0 (start) to 1.0 (finish line). */
+  raceProgress: number;
+  /** How many problems the player has solved. */
+  solvedCount: number;
+  /** Total problems in the match. */
+  totalProblems: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,26 +93,23 @@ export interface MatchStartPayload {
   /** ISO timestamp at which the battle ends. Client renders a countdown from this. */
   endsAt: string;
   durationSeconds: number;
+  mode: MatchMode;
+  totalProblems: number;
   opponent: {
     userId: string;
     username: string;
     elo: number;
   };
-  /** The three problems, with only the easy one unlocked for both players. */
-  problems: {
-    easy: MatchProblemBrief;
-    medium: MatchProblemBrief;
-    hard: MatchProblemBrief;
-  };
+  /** The problems in sequence. No difficulty revealed to the client. */
+  problems: MatchProblemBrief[];
 }
 
 /** Problem info delivered at match start (description lives on a REST fetch). */
 export interface MatchProblemBrief {
   problemId: string;
+  problemOrder: number;
   slug: string;
   title: string;
-  difficulty: ProblemDifficulty;
-  /** Starter code per supported language, keyed by language id. */
   starterCode: Record<string, string>;
   timeLimitMs: number;
   memoryLimitMb: number;
@@ -121,7 +123,7 @@ export interface ServerEvents {
   /** Sanitized opponent progress update — the core "pressure" feed. */
   'opponent:progress': (payload: OpponentSnapshot) => void;
   /** Fired when a new problem unlocks for you (you just solved the previous). */
-  'problem:unlocked': (payload: { difficulty: ProblemDifficulty }) => void;
+  'problem:unlocked': (payload: { problemOrder: number }) => void;
   /** Authoritative tick; clients resync their countdown to this. */
   'timer:sync': (payload: { endsAt: string; remainingMs: number }) => void;
   /** Match concluded with final scores and ELO deltas. */
@@ -134,7 +136,7 @@ export interface SubmissionVerdictPayload {
   matchId: string;
   submissionId: string;
   problemId: string;
-  difficulty: ProblemDifficulty;
+  problemOrder: number;
   verdict: SubmissionVerdict;
   passed: number;
   total: number;
@@ -153,5 +155,5 @@ export interface MatchEndPayload {
   eloDeltaA: number;
   eloDeltaB: number;
   /** Why the match ended. */
-  reason: 'time' | 'both_solved' | 'forfeit' | 'disconnect' | 'cancelled';
+  reason: 'time' | 'both_solved' | 'forfeit' | 'disconnect' | 'cancelled' | 'early_finish';
 }

@@ -5,7 +5,7 @@
  * ELO gap fits their time-widened matchmaking window.
  */
 
-import { findPair, dequeue, createMatch } from '@cp-battle/match';
+import { findPair, dequeue, createMatch, QUEUE_KEY } from '@cp-battle/match';
 import Redis from 'ioredis';
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -16,13 +16,21 @@ const redis = new Redis(redisUrl, {
   enableReadyCheck: true,
 });
 
+const META_PREFIX = 'cpb:matchmaking:meta:';
+
 async function poll() {
   try {
     const pair = await findPair(redis, Date.now());
     if (!pair) return;
 
     const [playerAId, playerBId] = pair;
-    console.log(`[matchmaker] Pairing ${playerAId} vs ${playerBId}`);
+
+    // Read mode from the first player's queue metadata
+    const raw = await redis.get(`${META_PREFIX}${playerAId}`);
+    const meta = raw ? JSON.parse(raw) : {};
+    const mode = (meta.mode ?? 'SPRINT') as 'SPRINT' | 'PROGRESSIVE';
+
+    console.log(`[matchmaker] Pairing ${playerAId} vs ${playerBId} (${mode})`);
 
     // Remove both from queue
     await Promise.all([
@@ -31,8 +39,8 @@ async function poll() {
     ]);
 
     // Create the match
-    const matchId = await createMatch(playerAId, playerBId);
-    console.log(`[matchmaker] Match created: ${matchId}`);
+    const matchId = await createMatch(playerAId, playerBId, mode);
+    console.log(`[matchmaker] Match created: ${matchId} (${mode})`);
   } catch (err) {
     console.error('[matchmaker] Error:', err);
   }

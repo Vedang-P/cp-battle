@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { io, Socket } from 'socket.io-client';
 import dynamic from 'next/dynamic';
 import type { MatchEndPayload, SubmissionVerdictPayload, OpponentSnapshot } from '@cp-battle/realtime';
+import RaceTrack from '@/components/RaceTrack';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
@@ -13,12 +14,12 @@ interface Problem {
   id: string;
   slug: string;
   title: string;
-  difficulty: string;
   descriptionMd: string;
   timeLimitMs: number;
   memoryLimitMb: number;
   points: number;
   starterCode: Record<string, string>;
+  problemOrder: number;
   progress: {
     status: string;
     wrongSubmissions: number;
@@ -32,12 +33,6 @@ const LANG_LABELS: Record<LanguageId, string> = {
   cpp: 'C++',
   python: 'Python',
   java: 'Java',
-};
-
-const DIFF_COLORS: Record<string, string> = {
-  EASY: 'text-ok',
-  MEDIUM: 'text-warn',
-  HARD: 'text-bad',
 };
 
 interface VerdictResult {
@@ -63,11 +58,15 @@ export default function BattlePage() {
   const [submitting, setSubmitting] = useState(false);
   const [remainingMs, setRemainingMs] = useState(0);
   const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
-  const [opponent, setOpponent] = useState<OpponentSnapshot | null>(null);
+  const [opponentName, setOpponentName] = useState('Opponent');
   const [opponentProgress, setOpponentProgress] = useState<any[]>([]);
   const [scores, setScores] = useState({ player: 0, opponent: 0 });
+  const [raceProgress, setRaceProgress] = useState({ player: 0, opponent: 0 });
+  const [solvedCount, setSolvedCount] = useState({ player: 0, opponent: 0 });
+  const [totalProblems, setTotalProblems] = useState(3);
   const [outputTab, setOutputTab] = useState<'result' | 'description'>('description');
   const [socketConnected, setSocketConnected] = useState(false);
+  const [matchMode, setMatchMode] = useState('SPRINT');
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -91,6 +90,8 @@ export default function BattlePage() {
       })
       .then((data) => {
         setProblems(data.problems);
+        setMatchMode(data.mode || 'SPRINT');
+        setTotalProblems(data.totalProblems || 3);
         // Set starter code for first unlocked problem
         const first = data.problems.find((p: Problem) => p.progress.status === 'UNLOCKED');
         if (first) {
@@ -108,6 +109,12 @@ export default function BattlePage() {
       .then((data) => {
         setOpponentProgress(data.opponentProgress || []);
         setScores(data.scores || { player: 0, opponent: 0 });
+        setRaceProgress(data.raceProgress || { player: 0, opponent: 0 });
+        setSolvedCount(data.solvedCount || { player: 0, opponent: 0 });
+        setTotalProblems(data.totalProblems || 3);
+        if (data.opponent?.username) {
+          setOpponentName(data.opponent.username);
+        }
       })
       .catch(() => {});
   }, [matchId]);
@@ -124,8 +131,8 @@ export default function BattlePage() {
 
     const socket = io(
       typeof window !== 'undefined'
-        ? `${window.location.protocol}//${window.location.hostname}:3001`
-        : 'http://localhost:3001',
+        ? `${window.location.protocol}//${window.location.hostname}:3002`
+        : 'http://localhost:3002',
       { transports: ['websocket', 'polling'] },
     );
 
@@ -151,7 +158,18 @@ export default function BattlePage() {
     });
 
     socket.on('opponent:progress' as any, (payload: OpponentSnapshot) => {
-      setOpponent(payload);
+      if (payload.raceProgress !== undefined) {
+        setRaceProgress((prev) => ({
+          ...prev,
+          opponent: payload.raceProgress,
+        }));
+      }
+      if (payload.solvedCount !== undefined) {
+        setSolvedCount((prev) => ({
+          ...prev,
+          opponent: payload.solvedCount,
+        }));
+      }
     });
 
     socket.on('timer:sync' as any, (payload: { endsAt: string; remainingMs: number }) => {
@@ -220,7 +238,7 @@ export default function BattlePage() {
     };
   }, [matchId, matchEnd]);
 
-  // Switch language → update code
+  // Switch language -> update code
   const switchLanguage = useCallback(
     (lang: LanguageId) => {
       setLanguage(lang);
@@ -236,7 +254,7 @@ export default function BattlePage() {
   const switchProblem = useCallback(
     (idx: number) => {
       const p = problems[idx];
-      if (p.progress.status === 'LOCKED') return;
+      if (!p || p.progress.status === 'LOCKED') return;
       setActiveProblem(idx);
       setCode(p.starterCode[language] || '');
       setVerdict(null);
@@ -247,6 +265,8 @@ export default function BattlePage() {
   // Submit code
   const handleSubmit = useCallback(
     async (mode: 'RUN' | 'SUBMIT') => {
+      const current = problems[activeProblem];
+      if (!current) return;
       setSubmitting(true);
       setVerdict(null);
 
@@ -255,7 +275,7 @@ export default function BattlePage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            problemId: problems[activeProblem].id,
+            problemId: current.id,
             language,
             code,
             mode,
@@ -274,11 +294,55 @@ export default function BattlePage() {
           });
           loadOpponent();
 
-          // If AC on submit, reload problems to check for unlocks
+          // If AC on submit, reload problems and advance to next unlocked
           if (mode === 'SUBMIT' && data.verdict === 'AC') {
             const probRes = await fetch(`/api/match/${matchId}/problems`);
             const probData = await probRes.json();
             setProblems(probData.problems);
+
+            // Update race progress for player
+            const solvedNow = probData.problems.filter(
+              (p: Problem) => p.progress.status === 'SOLVED',
+            ).length;
+            setSolvedCount((prev) => ({ ...prev, player: solvedNow }));
+            setRaceProgress((prev) => ({
+              ...prev,
+              player: solvedNow / probData.totalProblems,
+            }));
+
+            // Check if all problems solved (early finish)
+            if (solvedNow >= probData.totalProblems) {
+              // Match will be finalized by the submit endpoint
+              // Poll for the result
+              setTimeout(() => {
+                fetch(`/api/match/${matchId}/result`)
+                  .then((r) => r.json())
+                  .then((d) => {
+                    if (d.match?.status === 'COMPLETED') {
+                      setMatchEnd({
+                        matchId,
+                        status: 'COMPLETED',
+                        winnerId: d.match.winnerId,
+                        scoreA: d.match.scoreA,
+                        scoreB: d.match.scoreB,
+                        eloDeltaA: d.match.eloDeltaA,
+                        eloDeltaB: d.match.eloDeltaB,
+                        reason: 'early_finish',
+                      });
+                    }
+                  });
+              }, 1000);
+              return;
+            }
+
+            const nextIdx = probData.problems.findIndex(
+              (p: Problem) => p.progress.status === 'UNLOCKED',
+            );
+            if (nextIdx !== -1) {
+              setActiveProblem(nextIdx);
+              setCode(probData.problems[nextIdx].starterCode[language] || '');
+              setVerdict(null);
+            }
           }
         } else {
           setVerdict({ verdict: 'CE', passed: 0, total: 0, error: data.error || 'Submission failed' });
@@ -303,7 +367,6 @@ export default function BattlePage() {
   if (matchEnd) {
     const isWinner = matchEnd.winnerId === session?.user?.id;
     const isDraw = !matchEnd.winnerId;
-    // Determine which side the user is on from the scores we've been tracking
     const isPlayerA = scores.player === matchEnd.scoreA;
     const myEloDelta = isPlayerA ? matchEnd.eloDeltaA : matchEnd.eloDeltaB;
     const oppEloDelta = isPlayerA ? matchEnd.eloDeltaB : matchEnd.eloDeltaA;
@@ -326,7 +389,10 @@ export default function BattlePage() {
               {matchEnd.scoreA} — {matchEnd.scoreB}
             </div>
             <div className="text-sm text-gray-400">
-              Reason: {matchEnd.reason}
+              {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
+            </div>
+            <div className="text-xs text-gray-500">
+              {matchEnd.reason === 'early_finish' ? 'Race finished!' : 'Time ran out'}
             </div>
           </div>
 
@@ -366,7 +432,14 @@ export default function BattlePage() {
     );
   }
 
-  const currentProblem = problems[activeProblem];
+  const currentProblem = problems[activeProblem] ?? problems[0];
+  if (!currentProblem) {
+    return (
+      <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center">
+        <div className="text-gray-400">Loading problems...</div>
+      </div>
+    );
+  }
   const minutes = Math.floor(remainingMs / 60000);
   const seconds = Math.floor((remainingMs % 60000) / 1000);
   const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -374,29 +447,47 @@ export default function BattlePage() {
 
   return (
     <main className="flex h-[calc(100vh-3.5rem)] flex-col">
-      {/* Top bar */}
+      {/* Race track at top */}
+      <div className="border-b border-white/5 bg-bg-card">
+        <RaceTrack
+          playerProgress={raceProgress.player}
+          opponentProgress={raceProgress.opponent}
+          playerName={(session?.user as any)?.username ?? 'You'}
+          opponentName={opponentName}
+          playerSolved={solvedCount.player}
+          opponentSolved={solvedCount.opponent}
+          totalProblems={totalProblems}
+        />
+      </div>
+
+      {/* Top bar — problem tabs + timer */}
       <div className="flex h-10 items-center justify-between border-b border-white/5 bg-bg-card px-4">
         <div className="flex items-center gap-3">
           <span className="text-sm font-bold text-accent">BATTLE</span>
           <div className="flex gap-1">
-            {problems.map((p, i) => (
-              <button
-                key={p.id}
-                onClick={() => switchProblem(i)}
-                disabled={p.progress.status === 'LOCKED'}
-                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
-                  i === activeProblem
-                    ? 'bg-accent/20 text-accent'
-                    : p.progress.status === 'SOLVED'
-                    ? 'bg-ok/10 text-ok'
-                    : p.progress.status === 'LOCKED'
-                    ? 'cursor-not-allowed text-gray-600'
-                    : 'text-gray-400 hover:bg-bg-elev'
-                }`}
-              >
-                {p.difficulty.charAt(0)}
-              </button>
-            ))}
+            {problems.map((p, i) => {
+              const isSolved = p.progress.status === 'SOLVED';
+              const isCurrent = i === activeProblem;
+              const isLocked = p.progress.status === 'LOCKED';
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => switchProblem(i)}
+                  disabled={isLocked}
+                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                    isCurrent
+                      ? 'bg-accent/20 text-accent'
+                      : isSolved
+                      ? 'bg-ok/10 text-ok'
+                      : isLocked
+                      ? 'cursor-not-allowed text-gray-600'
+                      : 'text-gray-400 hover:bg-bg-elev'
+                  }`}
+                >
+                  {isSolved ? '✓' : i + 1}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -425,10 +516,9 @@ export default function BattlePage() {
         <div className="flex w-1/2 flex-col border-r border-white/5">
           <div className="flex items-center justify-between border-b border-white/5 px-4 py-2">
             <div>
-              <span className={`text-sm font-bold ${DIFF_COLORS[currentProblem.difficulty]}`}>
-                {currentProblem.difficulty}
+              <span className="text-sm font-bold text-white">
+                {currentProblem.title}
               </span>
-              <span className="ml-2 text-sm font-medium">{currentProblem.title}</span>
             </div>
             <div className="text-xs text-gray-500">
               {currentProblem.points} pts · {currentProblem.timeLimitMs}ms · {currentProblem.memoryLimitMb}MB
@@ -461,14 +551,14 @@ export default function BattlePage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleSubmit('RUN')}
-                disabled={submitting || currentProblem.progress.status === 'LOCKED'}
+                disabled={submitting || currentProblem.progress.status === 'LOCKED' || currentProblem.progress.status === 'SOLVED'}
                 className="btn-ghost text-xs"
               >
                 {submitting ? 'Running...' : 'Run'}
               </button>
               <button
                 onClick={() => handleSubmit('SUBMIT')}
-                disabled={submitting || currentProblem.progress.status === 'LOCKED'}
+                disabled={submitting || currentProblem.progress.status === 'LOCKED' || currentProblem.progress.status === 'SOLVED'}
                 className="btn-primary text-xs"
               >
                 {submitting ? 'Judging...' : 'Submit'}

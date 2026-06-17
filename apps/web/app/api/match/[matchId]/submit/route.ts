@@ -3,7 +3,8 @@ import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
 import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
-import { MATCH_CONFIG } from '@cp-battle/match';
+import { MATCH_CONFIG, type MatchModeType } from '@cp-battle/match';
+import { finalizeMatch } from '@cp-battle/match';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,11 @@ export async function POST(
     );
     if (!progress || progress.status === 'LOCKED') {
       return NextResponse.json({ error: 'Problem is locked' }, { status: 403 });
+    }
+
+    // Already solved — no resubmission
+    if (progress.status === 'SOLVED') {
+      return NextResponse.json({ error: 'Already solved' }, { status: 409 });
     }
 
     const problem = await db.problem.findUnique({
@@ -113,11 +119,8 @@ export async function POST(
       },
     });
 
-    // If SUBMIT and AC in a match, update progress
+    // If SUBMIT and AC, update progress and unlock next problem
     if (submissionMode === 'SUBMIT' && result.verdict === 'AC') {
-      const difficulty = problem.difficulty;
-      const nextDifficulty = difficulty === 'EASY' ? 'MEDIUM' : difficulty === 'MEDIUM' ? 'HARD' : null;
-
       await db.matchProgress.update({
         where: { id: progress.id },
         data: {
@@ -128,22 +131,46 @@ export async function POST(
         },
       });
 
-      // Unlock next difficulty
-      if (nextDifficulty) {
-        const nextProgress = match.progress.find(
-          (p) => p.userId === user.id && p.difficulty === nextDifficulty,
-        );
-        if (nextProgress) {
-          await db.matchProgress.update({
-            where: { id: nextProgress.id },
-            data: { status: 'UNLOCKED', unlockedAt: new Date() },
+      // Unlock next problem in the sequence (by problemOrder)
+      const nextOrder = progress.problemOrder + 1;
+      const nextProgress = match.progress.find(
+        (p) => p.userId === user.id && p.problemOrder === nextOrder,
+      );
+      if (nextProgress) {
+        await db.matchProgress.update({
+          where: { id: nextProgress.id },
+          data: { status: 'UNLOCKED', unlockedAt: new Date() },
+        });
+      }
+
+      // Check for early finish (Sprint mode: all problems solved)
+      const matchMode = match.mode as MatchModeType;
+      const userProgress = match.progress.filter((p) => p.userId === user.id);
+      const allSolved =
+        userProgress.every((p) => p.problemId === problemId ? true : p.status === 'SOLVED') &&
+        nextOrder >= match.totalProblems;
+
+      // Actually, we need to re-check after marking current as SOLVED
+      const updatedProgress = await db.matchProgress.findMany({
+        where: { matchId: match.id, userId: user.id },
+      });
+      const allDone = updatedProgress.every((p) => p.status === 'SOLVED');
+
+      if (allDone) {
+        // Player finished all problems — finalize match (early finish)
+        try {
+          await finalizeMatch({
+            matchId: match.id,
+            reason: 'early_finish',
           });
+        } catch (e) {
+          console.error('[submit] early finish finalization failed:', e);
         }
       }
     }
 
-    // If SUBMIT and not AC, increment wrong submissions (only if not already solved)
-    if (submissionMode === 'SUBMIT' && result.verdict !== 'AC' && progress.status !== 'SOLVED') {
+    // If SUBMIT and not AC, increment wrong submissions
+    if (submissionMode === 'SUBMIT' && result.verdict !== 'AC') {
       await db.matchProgress.update({
         where: { id: progress.id },
         data: { wrongSubmissions: { increment: 1 } },

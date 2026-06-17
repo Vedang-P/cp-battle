@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function SignUpPage() {
-  const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [globalError, setGlobalError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,11 +15,12 @@ export default function SignUpPage() {
     setGlobalError('');
     setLoading(true);
 
-    const form = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const data = new FormData(form);
     const body = {
-      username: form.get('username') as string,
-      email: form.get('email') as string,
-      password: form.get('password') as string,
+      username: data.get('username') as string,
+      email: data.get('email') as string,
+      password: data.get('password') as string,
     };
 
     try {
@@ -31,31 +30,36 @@ export default function SignUpPage() {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const json = await res.json();
 
       if (!res.ok) {
-        if (typeof data.error === 'object') {
-          setErrors(data.error);
+        if (typeof json.error === 'object') {
+          setErrors(json.error);
         } else {
-          setGlobalError(data.error || 'Something went wrong');
+          setGlobalError(json.error || 'Something went wrong');
         }
         setLoading(false);
         return;
       }
 
-      // Auto sign-in after signup
-      const signInRes = await signIn('credentials', {
-        email: body.email,
-        password: body.password,
-        redirect: false,
-      });
+      // Auto sign-in after signup — use window.location for reliable redirect
+      try {
+        const signInRes = await signIn('credentials', {
+          email: body.email,
+          password: body.password,
+          redirect: false,
+        });
 
-      if (signInRes?.url) {
-        router.push(signInRes.url);
-      } else {
-        router.push('/play');
+        if (signInRes?.error) {
+          // Account created but auto-login failed — send them to signin page
+          window.location.href = '/signin';
+          return;
+        }
+
+        window.location.href = '/play';
+      } catch {
+        window.location.href = '/signin';
       }
-      router.refresh();
     } catch {
       setGlobalError('Network error. Please try again.');
       setLoading(false);
@@ -73,20 +77,45 @@ export default function SignUpPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
           <div>
-            <label htmlFor="username" className="mb-1 block text-sm text-gray-400">Username</label>
-            <input id="username" name="username" type="text" required className="input" autoComplete="username" />
-            {errors.username && <p className="mt-1 text-xs text-bad">{errors.username[0]}</p>}
-          </div>
-          <div>
-            <label htmlFor="email" className="mb-1 block text-sm text-gray-400">Email</label>
-            <input id="email" name="email" type="email" required className="input" autoComplete="email" />
+            <label htmlFor="signup-email" className="mb-1 block text-sm text-gray-400">Email</label>
+            <input
+              id="signup-email"
+              name="email"
+              type="email"
+              required
+              className="input"
+              autoComplete="email"
+              placeholder="you@example.com"
+            />
             {errors.email && <p className="mt-1 text-xs text-bad">{errors.email[0]}</p>}
           </div>
           <div>
-            <label htmlFor="password" className="mb-1 block text-sm text-gray-400">Password</label>
-            <input id="password" name="password" type="password" required minLength={8} className="input" autoComplete="new-password" />
+            <label htmlFor="signup-username" className="mb-1 block text-sm text-gray-400">Username</label>
+            <input
+              id="signup-username"
+              name="username"
+              type="text"
+              required
+              className="input"
+              autoComplete="name"
+              placeholder="cool_coder"
+            />
+            {errors.username && <p className="mt-1 text-xs text-bad">{errors.username[0]}</p>}
+          </div>
+          <div>
+            <label htmlFor="signup-password" className="mb-1 block text-sm text-gray-400">Password</label>
+            <input
+              id="signup-password"
+              name="password"
+              type="password"
+              required
+              minLength={8}
+              className="input"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+            />
             {errors.password && <p className="mt-1 text-xs text-bad">{errors.password[0]}</p>}
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full">

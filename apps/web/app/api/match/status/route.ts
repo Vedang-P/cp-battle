@@ -11,7 +11,7 @@ export async function GET() {
     const user = await requireUser();
 
     // Check if in queue
-    const score = await redis.zscore(QUEUE_KEY, user.id);
+    const score = await (redis as any).zscore(QUEUE_KEY, user.id);
     if (score !== null) {
       return NextResponse.json({ status: 'queued' });
     }
@@ -25,9 +25,6 @@ export async function GET() {
       include: {
         playerA: { select: { id: true, username: true, elo: true } },
         playerB: { select: { id: true, username: true, elo: true } },
-        easy: { select: { id: true, slug: true, title: true, difficulty: true } },
-        medium: { select: { id: true, slug: true, title: true, difficulty: true } },
-        hard: { select: { id: true, slug: true, title: true, difficulty: true } },
       },
     });
 
@@ -37,6 +34,7 @@ export async function GET() {
         match: {
           id: activeMatch.id,
           endsAt: activeMatch.endsAt?.toISOString(),
+          mode: activeMatch.mode,
           opponent:
             activeMatch.playerAId === user.id
               ? activeMatch.playerB

@@ -1,18 +1,24 @@
 # Local development infrastructure for CP Battle.
-# Brings up Postgres, Redis, and optionally the Piston code-execution judge.
 #
-# Piston does NOT work on Docker Desktop for Windows due to isolate sandbox
-# requirements. It works on Linux. For Windows dev, skip Piston and the
-# health check will report it as unavailable (code submission returns an error).
+# Services:
+#   - Postgres 16  (app database)
+#   - Redis 7      (matchmaking queue + Socket.IO)
+#   - Judge0 CE    (code execution engine — requires cgroups v1)
+#
+# IMPORTANT: Judge0 uses `isolate` for sandboxing, which needs cgroups v1.
+# On Ubuntu 24.04, add this GRUB boot parameter:
+#   systemd.unified_cgroup_hierarchy=0
+# Then run: sudo update-grub && sudo reboot
 #
 # Usage:
-#   docker compose up -d            # start all services
-#   docker compose up -d postgres redis   # skip piston
-#   docker compose down             # stop (keeps data volumes)
+#   docker compose up -d                          # start everything
+#   docker compose up -d judge0-server judge0-worker  # judge only
+#   docker compose down                           # stop (keeps data volumes)
 
 name: cp-battle
 
 services:
+  # ── App infrastructure ──────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: cpb-postgres
@@ -46,48 +52,86 @@ services:
       timeout: 3s
       retries: 10
 
-  # Piston is the sandboxed code-execution engine (the "judge").
-  # NOTE: Piston requires Linux kernel features (isolate) that are not
-  # available on Docker Desktop for Windows. Uncomment on Linux deployments.
-  #
-  # piston:
-  #   image: ghcr.io/engineer-man/piston:latest
-  #   container_name: cpb-piston
-  #   restart: unless-stopped
-  #   ports:
-  #     - "2000:2000"
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "wget -qO- http://localhost:2000/api/v2/runtimes >/dev/null || exit 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 12
-  #     start_period: 30s
-  #
-  # piston-bootstrap:
-  #   image: alpine:3.20
-  #   container_name: cpb-piston-bootstrap
-  #   depends_on:
-  #     piston:
-  #       condition: service_healthy
-  #   environment:
-  #     PISTON_HOST: piston
-  #     PISTON_PORT: "2000"
-  #   entrypoint: ["/bin/sh", "-c"]
-  #   command:
-  #     - |
-  #       set -e
-  #       apk add --no-cache curl jq
-  #       echo "Waiting for Piston..."
-  #       until curl -sf http://$${PISTON_HOST}:$${PISTON_PORT}/api/v2/runtimes >/dev/null; do sleep 2; done
-  #       install() {
-  #         lang=$$1; ver=$$2
-  #         echo "==> Ensuring $$lang $$ver"
-  #         curl -sf -X POST http://$${PISTON_HOST}:$${PISTON_PORT}/api/v2/packages \
-  #           -H 'Content-Type: application/json' \
-  #           -d "{\"language\":\"$$lang\",\"version\":\"$$ver\"}" || echo "   (already installed or failed: $$lang $$ver)"
-  #       }
-  #       install gcc 12.2.0
-  #       install python3 3.10.0
-  #       install java 19.0.1
-  #       echo "==> Piston languages ready."
-  #   restart: "no"
+  # ── Judge0 CE (code execution engine) ──────────────────────────────
+  # Provides isolated sandboxed execution for C++, Python, Java.
+  # API docs: http://localhost:2358/docs
+
+  judge0-db:
+    image: postgres:16-alpine
+    container_name: cpb-judge0-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0_local
+      POSTGRES_DB: judge0
+    volumes:
+      - ./.docker-data/judge0-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: cpb-judge0-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./.docker-data/judge0-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: cpb-judge0-server
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    ports:
+      - "2358:2358"
+    volumes:
+      - ./judge0-cable.yml:/api/config/cable.yml:ro
+    environment:
+      DATABASE_URL: postgresql://judge0:judge0_local@judge0-db:5432/judge0
+      REDIS_URL: redis://judge0-redis:6379
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "true"
+      SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/bin/curl -sf http://localhost:2358/languages >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  judge0-worker:
+    image: judge0/judge0:1.13.1
+    container_name: cpb-judge0-worker
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    command: ["./scripts/workers"]
+    volumes:
+      - ./judge0-cable.yml:/api/config/cable.yml:ro
+    environment:
+      DATABASE_URL: postgresql://judge0:judge0_local@judge0-db:5432/judge0
+      REDIS_URL: redis://judge0-redis:6379
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "true"
+      SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod

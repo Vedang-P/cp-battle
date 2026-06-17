@@ -33,30 +33,32 @@ export async function GET(
       select: { id: true, username: true, elo: true },
     });
 
-    const opponentProgress = match.progress
-      .filter((p) => p.userId === opponentId)
-      .map((p) => ({
-        difficulty: p.difficulty,
+    const getProgress = (userId: string) => {
+      const rows = match.progress
+        .filter((p) => p.userId === userId)
+        .sort((a, b) => a.problemOrder - b.problemOrder);
+      return rows.map((p) => ({
+        problemOrder: p.problemOrder,
         status: p.status,
         wrongSubmissions: p.wrongSubmissions,
         scoreEarned: p.scoreEarned,
       }));
+    };
 
-    const playerProgress = match.progress
-      .filter((p) => p.userId === user.id)
-      .map((p) => ({
-        difficulty: p.difficulty,
-        status: p.status,
-        wrongSubmissions: p.wrongSubmissions,
-        scoreEarned: p.scoreEarned,
-      }));
+    const getSolvedCount = (userId: string) =>
+      match.progress.filter((p) => p.userId === userId && p.status === 'SOLVED').length;
 
-    const totalA = match.progress
-      .filter((p) => p.userId === match.playerAId)
-      .reduce((s, p) => s + p.scoreEarned, 0);
-    const totalB = match.progress
-      .filter((p) => p.userId === match.playerBId)
-      .reduce((s, p) => s + p.scoreEarned, 0);
+    const getScore = (userId: string) =>
+      match.progress
+        .filter((p) => p.userId === userId)
+        .reduce((s, p) => s + p.scoreEarned, 0);
+
+    const opponentProgress = getProgress(opponentId);
+    const playerProgress = getProgress(user.id);
+
+    const playerSolved = getSolvedCount(user.id);
+    const opponentSolved = getSolvedCount(opponentId);
+    const totalProblems = match.totalProblems;
 
     const isPlayerA = match.playerAId === user.id;
 
@@ -65,9 +67,19 @@ export async function GET(
       opponentProgress,
       playerProgress,
       scores: {
-        player: isPlayerA ? totalA : totalB,
-        opponent: isPlayerA ? totalB : totalA,
+        player: getScore(user.id),
+        opponent: getScore(opponentId),
       },
+      // Race progress: 0..1 for each player's car position
+      raceProgress: {
+        player: playerSolved / totalProblems,
+        opponent: opponentSolved / totalProblems,
+      },
+      solvedCount: {
+        player: playerSolved,
+        opponent: opponentSolved,
+      },
+      totalProblems,
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {

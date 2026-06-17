@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 export default function SignInPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/play';
   const [error, setError] = useState('');
@@ -17,21 +16,28 @@ export default function SignInPage() {
     setError('');
     setLoading(true);
 
-    const form = new FormData(e.currentTarget);
-    const res = await signIn('credentials', {
-      email: form.get('email') as string,
-      password: form.get('password') as string,
-      redirect: false,
-      callbackUrl,
-    });
+    const form = e.currentTarget;
+    const data = new FormData(form);
 
-    setLoading(false);
+    try {
+      const res = await signIn('credentials', {
+        email: data.get('email') as string,
+        password: data.get('password') as string,
+        redirect: false,
+        callbackUrl,
+      });
 
-    if (res?.error) {
-      setError('Invalid email or password');
-    } else if (res?.url) {
-      router.push(res.url);
-      router.refresh();
+      if (res?.error) {
+        setError('Invalid email or password');
+        setLoading(false);
+        return;
+      }
+
+      // Successful sign-in — use window.location for reliable redirect
+      window.location.href = res?.url || callbackUrl;
+    } catch {
+      setError('Network error. Please try again.');
+      setLoading(false);
     }
   }
 
@@ -46,14 +52,30 @@ export default function SignInPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
           <div>
-            <label htmlFor="email" className="mb-1 block text-sm text-gray-400">Email</label>
-            <input id="email" name="email" type="email" required className="input" autoComplete="email" />
+            <label htmlFor="signin-email" className="mb-1 block text-sm text-gray-400">Email</label>
+            <input
+              id="signin-email"
+              name="email"
+              type="email"
+              required
+              className="input"
+              autoComplete="email username"
+              placeholder="you@example.com"
+            />
           </div>
           <div>
-            <label htmlFor="password" className="mb-1 block text-sm text-gray-400">Password</label>
-            <input id="password" name="password" type="password" required className="input" autoComplete="current-password" />
+            <label htmlFor="signin-password" className="mb-1 block text-sm text-gray-400">Password</label>
+            <input
+              id="signin-password"
+              name="password"
+              type="password"
+              required
+              className="input"
+              autoComplete="current-password"
+              placeholder="Your password"
+            />
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading ? 'Signing in...' : 'Sign in'}
