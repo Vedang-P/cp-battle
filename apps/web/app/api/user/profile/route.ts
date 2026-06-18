@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@cp-battle/db';
+import { db } from '@zapdos/db';
 import { getUser } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';

@@ -16,9 +16,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
-import type { ClientEvents, ServerEvents } from '@cp-battle/realtime';
-import { matchRoom, userRoom } from '@cp-battle/realtime';
-import { db } from '@cp-battle/db';
+import type { ClientEvents, ServerEvents } from '@zapdos/realtime';
+import { matchRoom, userRoom } from '@zapdos/realtime';
+import { db } from '@zapdos/db';
 
 const PORT = Number(process.env.REALTIME_PORT ?? 3002);
 const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? '';

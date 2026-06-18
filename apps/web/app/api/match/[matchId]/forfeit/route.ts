@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
-import { db } from '@cp-battle/db';
-import { finalizeMatch } from '@cp-battle/match';
+import { db } from '@zapdos/db';
+import { finalizeMatch } from '@zapdos/match';
 import { emitToMatch } from '@/lib/socket';
 import { isValidId } from '@/lib/validation';
-import type { MatchEndPayload } from '@cp-battle/realtime';
+import type { MatchEndPayload } from '@zapdos/realtime';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,5 +1,5 @@
 /**
- * PM2 ecosystem config — starts all CP Battle processes in production.
+ * PM2 ecosystem config — starts all Zapdos processes in production.
  *
  * Usage:
  *   pm2 start ecosystem.config.cjs --env production
@@ -17,7 +17,7 @@
 module.exports = {
   apps: [
     {
-      name: 'cpb-web',
+      name: 'zapdos-web',
       script: 'node',
       args: 'apps/web/server.js',
       env: { NODE_ENV: 'production', PORT: 3000 },
@@ -26,7 +26,7 @@ module.exports = {
       autorestart: true,
     },
     {
-      name: 'cpb-realtime',
+      name: 'zapdos-realtime',
       script: 'node_modules/.bin/tsx',
       args: 'apps/web/server/index.ts',
       env: { NODE_ENV: 'production' },
@@ -35,7 +35,7 @@ module.exports = {
       autorestart: true,
     },
     {
-      name: 'cpb-matchmaker',
+      name: 'zapdos-matchmaker',
       script: 'node_modules/.bin/tsx',
       args: 'apps/web/server/matchmaker.ts',
       env: { NODE_ENV: 'production' },
@@ -44,7 +44,7 @@ module.exports = {
       autorestart: true,
     },
     {
-      name: 'cpb-finalizer',
+      name: 'zapdos-finalizer',
       script: 'node_modules/.bin/tsx',
       args: 'apps/web/server/finalizer.ts',
       env: { NODE_ENV: 'production' },
@@ -53,7 +53,7 @@ module.exports = {
       autorestart: true,
     },
     {
-      name: 'cpb-bot',
+      name: 'zapdos-bot',
       script: 'node_modules/.bin/tsx',
       args: 'apps/web/server/bot-worker.ts',
       env: { NODE_ENV: 'production' },

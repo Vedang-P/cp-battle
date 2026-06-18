@@ -14,9 +14,9 @@
  *   pnpm scrape-problems -- --atcoder # AtCoder only
  */
 
-import { db } from '@cp-battle/db';
+import { db } from '@zapdos/db';
 import * as cheerio from 'cheerio';
-import type { Difficulty } from '@cp-battle/db';
+import type { Difficulty } from '@zapdos/db';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ async function fetchWithRetry(url: string, maxRetries = 3): Promise<string> {
     try {
       const res = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CPBattleBot/1.0; +https://cp-battle.dev)',
+          'User-Agent': 'Mozilla/5.0 (compatible; ZapdosBot/1.0; +https://zapdos.dev)',
           'Accept': 'text/html,application/xhtml+xml',
           'Accept-Language': 'en-US,en;q=0.9',
         },
@@ -529,7 +529,7 @@ async function main() {
   const scrapeAll = !scrapeCsesFlag && !scrapeAtcoderFlag;
 
   progress('╔══════════════════════════════════════════════╗');
-  progress('║  CP Battle — Problem Scraper                 ║');
+  progress('║  Zapdos — Problem Scraper                     ║');
   progress('║  Sources: CSES + AtCoder (REAL problems)     ║');
   progress('╚══════════════════════════════════════════════╝');
 

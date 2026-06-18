@@ -21,27 +21,27 @@ importers:
       '@auth/prisma-adapter':
         specifier: 2.0.0
         version: 2.0.0(@prisma/client@5.14.0(prisma@5.14.0))
-      '@cp-battle/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@cp-battle/elo':
-        specifier: workspace:*
-        version: link:../../packages/elo
-      '@cp-battle/judge':
-        specifier: workspace:*
-        version: link:../../packages/judge
-      '@cp-battle/match':
-        specifier: workspace:*
-        version: link:../../packages/match
-      '@cp-battle/realtime':
-        specifier: workspace:*
-        version: link:../../packages/realtime
       '@monaco-editor/react':
         specifier: 4.6.0
         version: 4.6.0(monaco-editor@0.55.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@socket.io/redis-adapter':
         specifier: ^8.3.0
         version: 8.3.0(socket.io-adapter@2.5.8)
+      '@zapdos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@zapdos/elo':
+        specifier: workspace:*
+        version: link:../../packages/elo
+      '@zapdos/judge':
+        specifier: workspace:*
+        version: link:../../packages/judge
+      '@zapdos/match':
+        specifier: workspace:*
+        version: link:../../packages/match
+      '@zapdos/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
       bcryptjs:
         specifier: 2.4.3
         version: 2.4.3
@@ -155,7 +155,7 @@ importers:
 
   packages/judge:
     dependencies:
-      '@cp-battle/db':
+      '@zapdos/db':
         specifier: workspace:*
         version: link:../db
     devDependencies:
@@ -168,10 +168,10 @@ importers:
 
   packages/match:
     dependencies:
-      '@cp-battle/db':
+      '@zapdos/db':
         specifier: workspace:*
         version: link:../db
-      '@cp-battle/elo':
+      '@zapdos/elo':
         specifier: workspace:*
         version: link:../elo
     devDependencies:
@@ -3878,7 +3878,7 @@ snapshots:
       eslint: 8.57.0
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.0))(eslint@8.57.0)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.0)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.0)
       eslint-plugin-react: 7.37.5(eslint@8.57.0)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.0)
@@ -3908,7 +3908,7 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.0)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -3923,7 +3923,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.0):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@7.2.0(eslint@8.57.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9

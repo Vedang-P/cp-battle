@@ -40,7 +40,7 @@ function getJudge0Headers(): Record<string, string> {
 }
 
 /**
- * Judge0 language IDs for the languages CP Battle supports.
+ * Judge0 language IDs for the languages Zapdos supports.
  * These match Judge0 CE v1.13.1.
  */
 const JUDGE0_LANGUAGE_IDS: Record<string, number> = {
@@ -241,12 +241,12 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
 
 /**
  * Poll Judge0 for a submission result by token.
- * Retries every 500ms until the submission is no longer "In Queue" or "Processing".
+ * Retries every 200ms until the submission is no longer "In Queue" or "Processing".
  */
 async function pollForResult(token: string, signal: AbortSignal): Promise<Judge0SubmissionResponse> {
-  const maxAttempts = 120; // 60 seconds max
+  const maxAttempts = 300; // 60 seconds max (300 * 200ms)
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 200));
     if (signal.aborted) throw new TimeoutError('Polling aborted');
 
     const res = await fetch(`${JUDGE0_URL}/submissions/${token}?base64_encoded=true`, {

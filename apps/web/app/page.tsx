@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { MatrixRain } from '@/components/MatrixRain';
-import { GlowText } from '@/components/GlowText';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
 /**
@@ -25,24 +24,24 @@ const HELP_TEXT = [
   '  play     — start a coding battle',
   '  rank     — view leaderboard',
   '  signup   — create an account',
-  '  about    — what is cp-battle?',
+  '  about    — what is zapdos?',
   '  clear    — clear the terminal',
 ];
 
 const ABOUT_TEXT = [
-  'cp-battle — 1v1 competitive programming duels',
+  'zapdos — 1v1 competitive programming duels',
   '',
   'race head-to-head against another programmer.',
   'progressive-unlock problems (easy -> medium).',
   'live timer, opponent progress, ELO ladder.',
   '',
-  '400+ real problems from CSES. judge0 sandbox.',
+  'real problems from CSES. judge0 sandbox.',
   'c++ / python / java. 20-minute matches.',
 ];
 
 export default function HomePage() {
   const [lines, setLines] = useState<Line[]>([
-    { type: 'system', text: 'CP-OS v1.0.0 — boot complete' },
+    { type: 'system', text: 'ZAPDOS v1.0.0' },
     { type: 'system', text: 'Type "help" to get started.' },
   ]);
   const [input, setInput] = useState('');
@@ -50,6 +49,8 @@ export default function HomePage() {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'loading' | 'done'>('idle');
 
   // Auto-scroll to bottom on new lines
   useEffect(() => {
@@ -104,7 +105,7 @@ export default function HomePage() {
         addOutput(['help  play  rank  signup  about  clear']);
         break;
       case 'whoami':
-        addOutput(['guest@cp-battle — type "signup" to register']);
+        addOutput(['guest@zapdos — type "signup" to register']);
         break;
       case 'sudo':
         addOutput(['nice try. this isn\'t your system.']);
@@ -143,18 +144,28 @@ export default function HomePage() {
       <MatrixRain opacity={0.03} speed={0.5} />
 
       <div className="relative z-10 w-full max-w-2xl">
-        {/* Title above the terminal */}
+        {/* ASCII Art Title */}
         <div className="mb-6 text-center">
-          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif', letterSpacing: '-0.03em' }}>
-            <GlowText color="green" intensity="strong">cp-battle</GlowText>
-          </h1>
-          <p className="mt-2 text-sm text-text-muted">
+          <pre className="text-[4px] sm:text-[6px] md:text-[8px] leading-tight text-green font-mono mx-auto inline-block text-left select-none">
+{`██████████                         █████                    
+░█░░░░░░███                         ░░███                     
+░     ███░    ██████   ████████   ███████   ██████   █████    
+     ███     ░░░░░███ ░░███░░███ ███░░███  ███░░███ ███░░     
+    ███       ███████  ░███ ░███░███ ░███ ░███ ░███░░█████    
+  ████     █ ███░░███  ░███ ░███░███ ░███ ░███ ░███ ░░░░███   
+ ███████████░░████████ ░███████ ░░████████░░██████  ██████    
+░░░░░░░░░░░  ░░░░░░░░  ░███░░░   ░░░░░░░░  ░░░░░░  ░░░░░░     
+                       ░███                                   
+                       █████                                  
+                      ░░░░░`}
+          </pre>
+          <p className="mt-3 text-sm text-text-muted">
             1v1 competitive programming duels — race, rank, repeat.
           </p>
         </div>
 
         {/* Interactive terminal */}
-        <TerminalWindow title="guest@cp-battle: ~" className="w-full">
+        <TerminalWindow title="guest@zapdos: ~" className="w-full">
           <div
             ref={scrollRef}
             className="h-80 overflow-y-auto font-mono text-sm leading-relaxed"
@@ -202,9 +213,56 @@ export default function HomePage() {
           </Link>
         </div>
 
-        {/* Stats line */}
-        <div className="mt-8 text-center font-mono text-xs text-text-muted/60">
-          400+ problems · c++ / python / java · judge0 sandbox · ELO ranked
+        {/* Feedback section */}
+        <div className="mt-12 w-full max-w-md mx-auto">
+          <TerminalWindow title="feedback/send.sh">
+            <div className="text-center mb-3">
+              <h2 className="text-sm font-medium tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+                <span className="text-cyan">send feedback</span>
+              </h2>
+              <p className="font-mono text-[11px] text-text-muted mt-0.5">anonymous — helps us improve</p>
+            </div>
+            {feedbackStatus === 'done' ? (
+              <div className="text-center py-4">
+                <p className="font-mono text-sm text-success">thanks for your feedback!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  value={feedbackMsg}
+                  onChange={(e) => setFeedbackMsg(e.target.value)}
+                  className="input font-mono text-sm h-20 resize-none"
+                  placeholder="type your feedback here..."
+                  maxLength={2000}
+                />
+                <button
+                  onClick={async () => {
+                    if (!feedbackMsg.trim()) return;
+                    setFeedbackStatus('loading');
+                    try {
+                      const res = await fetch('/api/feedback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: feedbackMsg.trim() }),
+                      });
+                      if (res.ok) {
+                        setFeedbackStatus('done');
+                        setFeedbackMsg('');
+                      } else {
+                        setFeedbackStatus('idle');
+                      }
+                    } catch {
+                      setFeedbackStatus('idle');
+                    }
+                  }}
+                  disabled={feedbackStatus === 'loading' || !feedbackMsg.trim()}
+                  className="btn-ghost w-full h-9 font-mono text-sm"
+                >
+                  {feedbackStatus === 'loading' ? '> sending...' : '> submit'}
+                </button>
+              </div>
+            )}
+          </TerminalWindow>
         </div>
       </div>
     </main>

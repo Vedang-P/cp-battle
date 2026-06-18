@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@cp-battle/db';
+import { db } from '@zapdos/db';
 import { hashPassword } from '@/lib/password';
 import { signupSchema } from '@/lib/schemas';
 import { checkIpSignupLimit } from '@/lib/rate-limit';

@@ -17,13 +17,13 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'CP Battle — 1v1 Competitive Programming',
+  title: 'Zapdos — 1v1 Competitive Programming',
   description: 'Race head-to-head against another programmer. Solve problems, climb the ELO ladder.',
   icons: {
     icon: '/favicon.svg',
   },
   openGraph: {
-    title: 'CP Battle',
+    title: 'Zapdos',
     description: '1v1 competitive programming. Solve problems faster than your opponent.',
     type: 'website',
   },

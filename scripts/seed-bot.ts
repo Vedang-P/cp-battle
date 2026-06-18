@@ -8,10 +8,10 @@ import { createHash } from 'crypto';
 
 const prisma = new PrismaClient();
 
-const BOT_EMAIL = 'cp-bot@cp-battle.dev';
-const BOT_USERNAME = 'CP-Bot';
+const BOT_EMAIL = 'zap-bot@zapdos.dev';
+const BOT_USERNAME = 'Zapdos-Bot';
 // Random password — nobody logs in as the bot
-const BOT_PASSWORD = createHash('sha256').update('cp-bot-' + Date.now()).digest('hex');
+const BOT_PASSWORD = createHash('sha256').update('zap-bot-' + Date.now()).digest('hex');
 
 async function main() {
   const existing = await prisma.user.findUnique({ where: { email: BOT_EMAIL } });

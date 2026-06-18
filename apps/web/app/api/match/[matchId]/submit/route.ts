@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
 import { isValidId } from '@/lib/validation';
-import { db } from '@cp-battle/db';
-import { judgeSubmission, getLanguage } from '@cp-battle/judge';
-import type { LanguageId } from '@cp-battle/judge';
-import { MATCH_CONFIG } from '@cp-battle/match';
-import { finalizeMatch } from '@cp-battle/match';
+import { db } from '@zapdos/db';
+import { judgeSubmission, getLanguage } from '@zapdos/judge';
+import type { LanguageId } from '@zapdos/judge';
+import { MATCH_CONFIG } from '@zapdos/match';
+import { finalizeMatch } from '@zapdos/match';
 import { emitToMatch, emitToUser } from '@/lib/socket';
-import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
+import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@zapdos/realtime';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
 import { withJudgeConcurrency } from '@/lib/judge-limiter';
@@ -354,7 +354,7 @@ export async function POST(
     ];
     if (postJudgeResult.nextProblem) {
       socketPromises.push(
-        emitToUser(user.id, 'problem:unlocked', {
+        emitToMatch(matchId, 'problem:unlocked', {
           problemOrder: postJudgeResult.nextProblem.problemOrder,
         }),
       );

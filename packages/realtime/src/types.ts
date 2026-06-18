@@ -1,5 +1,5 @@
 /**
- * @cp-battle/realtime — shared Socket.IO event contracts.
+ * @zapdos/realtime — shared Socket.IO event contracts.
  *
  * These types are imported by BOTH the realtime server (apps/web/server) and
  * the browser client, so the wire format can never drift between them.

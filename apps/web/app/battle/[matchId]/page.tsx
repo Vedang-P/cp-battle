@@ -8,7 +8,7 @@ import type {
   MatchEndPayload,
   SubmissionVerdictPayload,
   OpponentSnapshot,
-} from '@cp-battle/realtime';
+} from '@zapdos/realtime';
 import { useCountdown } from '@/lib/useCountdown';
 import { BattleHUD } from '@/components/battle/BattleHUD';
 import { ProblemPanel } from '@/components/battle/ProblemPanel';
@@ -165,7 +165,7 @@ export default function BattlePage({ params }: Props) {
   useEffect(() => {
     const currentProb = problems[activeProblem];
     if (!matchId || !currentProb) return;
-    const key = `cpbattle-code-${matchId}-${currentProb.id}`;
+    const key = `zapdos-code-${matchId}-${currentProb.id}`;
     localStorage.setItem(key, JSON.stringify({ language, code }));
   }, [matchId, activeProblem, language, code, problems]);
 
@@ -375,7 +375,7 @@ export default function BattlePage({ params }: Props) {
         }),
       });
       const data = await res.json();
-      if (data.verdict && !data.earlyFinish) {
+      if (data.verdict) {
         // For SUBMIT mode, verdict usually arrives via socket. But if the
         // server returns it inline (e.g., CE, judge error), show it immediately.
         setVerdict({
@@ -455,7 +455,6 @@ export default function BattlePage({ params }: Props) {
         isPractice={matchMeta?.isPractice ?? false}
         practiceDifficulty={matchMeta?.practiceDifficulty ?? ''}
         eloDelta={eloDelta}
-        displayElo={Math.abs(eloDelta)}
         showConfetti={showConfetti}
         solvedCount={{
           player: scores.player,
@@ -520,7 +519,7 @@ export default function BattlePage({ params }: Props) {
 /** Read saved code for a (matchId, problemId) pair from localStorage. */
 function restoreCode(matchId: string, problemId: string): { language: LanguageId; code: string } | null {
   try {
-    const key = `cpbattle-code-${matchId}-${problemId}`;
+    const key = `zapdos-code-${matchId}-${problemId}`;
     const saved = localStorage.getItem(key);
     if (!saved) return null;
     const parsed = JSON.parse(saved) as { language?: LanguageId; code?: string };

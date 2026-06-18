@@ -1,5 +1,5 @@
 /**
- * @cp-battle/elo — Classic Elo rating math for 1v1 matches.
+ * @zapdos/elo — Classic Elo rating math for 1v1 matches.
  *
  * Pure functions, zero dependencies. Tunable via EloConfig.
  *

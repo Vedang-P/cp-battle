@@ -34,7 +34,7 @@ export function Navbar() {
         <Link href="/" className="flex items-center gap-1 text-sm text-text-muted hover:text-text-secondary transition-colors">
           <span className="text-brand">root</span>
           <span className="text-text-muted">@</span>
-          <span className="text-text-secondary">cp-battle</span>
+          <span className="text-text-secondary">zapdos</span>
           <span className="text-text-muted">:</span>
           <span className="text-accent-cyan">~</span>
           <span className="text-text-muted">$</span>

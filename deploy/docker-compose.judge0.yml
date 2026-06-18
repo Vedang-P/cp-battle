@@ -4,7 +4,7 @@
 # Usage (on the Judge0 VM, from the repo root):
 #   docker compose --env-file .env.judge0 -f deploy/docker-compose.judge0.yml up -d
 
-name: cpb-judge0
+name: zapdos-judge0
 
 services:
   judge0-db:
@@ -64,6 +64,50 @@ services:
       start_period: 30s
 
   judge0-worker:
+    image: mrkushalsm/judge0:latest
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    command: ["./scripts/workers"]
+    volumes:
+      - ../judge0-cable.yml:/api/config/cable.yml:ro
+    environment:
+      DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
+      REDIS_URL: redis://judge0-redis:6379
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: "6379"
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "true"
+      SECRET_KEY_BASE: ${JUDGE0_SECRET_KEY_BASE}
+      ENABLE_CGROUP: "false"
+
+  judge0-worker-2:
+    image: mrkushalsm/judge0:latest
+    restart: unless-stopped
+    privileged: true
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    command: ["./scripts/workers"]
+    volumes:
+      - ../judge0-cable.yml:/api/config/cable.yml:ro
+    environment:
+      DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
+      REDIS_URL: redis://judge0-redis:6379
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: "6379"
+      RAILS_ENV: production
+      RAILS_LOG_TO_STDOUT: "true"
+      SECRET_KEY_BASE: ${JUDGE0_SECRET_KEY_BASE}
+      ENABLE_CGROUP: "false"
+
+  judge0-worker-3:
     image: mrkushalsm/judge0:latest
     restart: unless-stopped
     privileged: true

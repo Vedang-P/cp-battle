@@ -1,4 +1,4 @@
-# CP Battle
+# Zapdos
 
 **1v1 competitive programming duels.** Race head-to-head against another programmer — progressive-unlock problems (Easy → Medium), live timer, see your opponent's progress but never their code. Climb the ELO ladder.
 
@@ -41,11 +41,11 @@ Workers (separate processes):
 | Path | Package | Purpose |
 |------|---------|---------|
 | `apps/web` | `web` | Next.js app (frontend + REST API) + standalone Socket.IO server + workers |
-| `packages/db` | `@cp-battle/db` | Prisma schema, client singleton, seeds |
-| `packages/elo` | `@cp-battle/elo` | Pure Elo rating math |
-| `packages/realtime` | `@cp-battle/realtime` | Shared Socket.IO event contracts |
-| `packages/judge` | `@cp-battle/judge` | Judge0 client, token-based output compare, verdict logic |
-| `packages/match` | `@cp-battle/match` | Matchmaking queue, scoring, match lifecycle |
+| `packages/db` | `@zapdos/db` | Prisma schema, client singleton, seeds |
+| `packages/elo` | `@zapdos/elo` | Pure Elo rating math |
+| `packages/realtime` | `@zapdos/realtime` | Shared Socket.IO event contracts |
+| `packages/judge` | `@zapdos/judge` | Judge0 client, token-based output compare, verdict logic |
+| `packages/match` | `@zapdos/match` | Matchmaking queue, scoring, match lifecycle |
 
 ---
 
@@ -60,7 +60,7 @@ Workers (separate processes):
 ```bash
 # 1. Clone and install
 git clone <repo-url>
-cd cp-battle
+cd zapdos
 pnpm install
 
 # 2. Copy env and fill in secrets
@@ -121,7 +121,7 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 
 ## Problem Corpus
 
-CP Battle uses **real problems** sourced from competitive programming platforms — not generated.
+Zapdos uses **real problems** sourced from competitive programming platforms — not generated.
 
 | Source | Count | How to add |
 |--------|-------|------------|
@@ -175,7 +175,7 @@ The music player loops through all tracks and back to the start. Users can mute/
 
 3. **On the web instance:**
    ```bash
-   git clone <repo-url> && cd cp-battle
+   git clone <repo-url> && cd zapdos
    cp .env.example .env
    # Edit .env with production values (DATABASE_URL, REDIS_URL, JUDGE0_URL, secrets)
    pnpm install

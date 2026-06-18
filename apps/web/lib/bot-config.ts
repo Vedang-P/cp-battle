@@ -4,10 +4,10 @@
  */
 
 /** The bot user's email — used to look up or create the bot user. */
-export const BOT_EMAIL = 'cp-bot@cp-battle.dev';
+export const BOT_EMAIL = 'zap-bot@zapdos.dev';
 
 /** Bot username displayed in matches. */
-export const BOT_USERNAME = 'CP-Bot';
+export const BOT_USERNAME = 'Zapdos-Bot';
 
 /**
  * Difficulty profiles for the AI opponent.

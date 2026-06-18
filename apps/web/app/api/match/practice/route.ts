@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
-import { db } from '@cp-battle/db';
-import { createMatch } from '@cp-battle/match';
+import { db } from '@zapdos/db';
+import { createMatch } from '@zapdos/match';
 import { emitToUser } from '@/lib/socket';
-import { BOT_EMAIL } from '@/lib/bot-config';
-import type { MatchStartPayload } from '@cp-battle/realtime';
-import type { Difficulty } from '@cp-battle/db';
+import { BOT_EMAIL, BOT_USERNAME } from '@/lib/bot-config';
+import type { MatchStartPayload } from '@zapdos/realtime';
+import type { Difficulty } from '@zapdos/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,11 +40,11 @@ export async function POST(req: Request) {
     if (!bot) {
       // Auto-create bot if seed hasn't been run
       const { createHash } = await import('crypto');
-      const pw = createHash('sha256').update('cp-bot-auto-' + Date.now()).digest('hex');
+      const pw = createHash('sha256').update('zap-bot-auto-' + Date.now()).digest('hex');
       bot = await db.user.create({
         data: {
           email: BOT_EMAIL,
-          username: 'CP-Bot',
+          username: BOT_USERNAME,
           passwordHash: pw,
           elo: 1200,
         },

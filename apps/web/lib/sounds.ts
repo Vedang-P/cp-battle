@@ -1,5 +1,5 @@
 /**
- * Sound effects for CP Battle — high octane electro EDM style.
+ * Sound effects for Zapdos — high octane electro EDM style.
  *
  * All sounds are synthesized using the Web Audio API.
  * No external audio files needed.

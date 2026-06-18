@@ -7,12 +7,12 @@
  * Runs as a separate process: pnpm dev:bot
  */
 
-import { db } from '@cp-battle/db';
-import { finalizeMatch } from '@cp-battle/match';
+import { db } from '@zapdos/db';
+import { finalizeMatch } from '@zapdos/match';
 import { BOT_EMAIL, BOT_PROFILES, getSolveDelay, randInt } from '../lib/bot-config';
 import { emitSocketEvent } from '../lib/socket';
-import { matchRoom } from '@cp-battle/realtime';
-import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
+import { matchRoom } from '@zapdos/realtime';
+import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@zapdos/realtime';
 
 const POLL_INTERVAL_MS = 2000;
 

@@ -37,7 +37,7 @@ export async function emitSocketEvent(
   }
 }
 
-import { matchRoom } from '@cp-battle/realtime';
+import { matchRoom } from '@zapdos/realtime';
 
 /** Emit an event to a match room. */
 export function emitToMatch(matchId: string, event: string, payload: unknown) {

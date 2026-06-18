@@ -91,80 +91,136 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
     };
   }
 
-  let maxTime = 0;
-  let maxMem = 0;
-  let passed = 0;
+  // Run first test case to detect compile errors early
+  let firstResult: PistonRunResult;
+  try {
+    firstResult = await executeOnce({
+      language,
+      source,
+      stdin: testCases[0]!.input,
+      cpuTimeLimitMs: effectiveTimeMs,
+      memoryLimitMb: effectiveMemMb,
+    });
+  } catch (err) {
+    if (err instanceof TimeoutError) {
+      return {
+        verdict: 'TLE',
+        passed: 0,
+        total: testCases.length,
+        timeMs: effectiveTimeMs,
+        memoryKb: null,
+        compileError: null,
+        runtimeError: null,
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      verdict: 'CE',
+      passed: 0,
+      total: testCases.length,
+      timeMs: null,
+      memoryKb: null,
+      compileError: `Judge unavailable: ${truncate(msg)}`,
+      runtimeError: null,
+    };
+  }
 
-  for (let i = 0; i < testCases.length; i++) {
-    const tc = testCases[i]!;
+  // Compile error short-circuits the whole submission.
+  if (firstResult.compile && firstResult.compile.code !== null && firstResult.compile.code !== 0) {
+    return {
+      verdict: 'CE',
+      passed: 0,
+      total: testCases.length,
+      timeMs: null,
+      memoryKb: null,
+      compileError: truncate(firstResult.compile.stderr || firstResult.compile.stdout),
+      runtimeError: null,
+    };
+  }
 
-    let result: PistonRunResult;
-    try {
-      result = await executeOnce({
+  // Classify first test case
+  const firstVerdict = classifyRun(firstResult.run, firstResult.run.stdout, testCases[0]!.expected);
+  let maxTime = firstResult.run.cpu_time_ms ?? 0;
+  let maxMem = firstResult.run.memory_bytes ?? 0;
+
+  // If first test case failed, return immediately
+  if (firstVerdict !== 'AC') {
+    return {
+      verdict: firstVerdict,
+      passed: 0,
+      total: testCases.length,
+      timeMs: maxTime || null,
+      memoryKb: maxMem ? Math.round(maxMem / 1024) : null,
+      compileError: null,
+      runtimeError: firstVerdict === 'RE' ? truncate(firstResult.run.stderr) : null,
+    };
+  }
+
+  // Run remaining test cases in parallel
+  const remainingTestCases = testCases.slice(1);
+  const results = await Promise.allSettled(
+    remainingTestCases.map((tc) =>
+      executeOnce({
         language,
         source,
         stdin: tc.input,
         cpuTimeLimitMs: effectiveTimeMs,
         memoryLimitMb: effectiveMemMb,
-      });
-    } catch (err) {
-      // Map TimeoutError to TLE, not CE
+      })
+    )
+  );
+
+  let passed = 1; // First test case passed
+  let failedVerdict: Verdict | null = null;
+  let failedRuntimeError: string | null = null;
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]!;
+
+    if (result.status === 'rejected') {
+      const err = result.reason;
       if (err instanceof TimeoutError) {
-        return {
-          verdict: 'TLE',
-          passed: 0,
-          total: testCases.length,
-          timeMs: effectiveTimeMs,
-          memoryKb: null,
-          compileError: null,
-          runtimeError: null,
-        };
+        failedVerdict = 'TLE';
+        break;
       }
-      // Other judge errors
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        verdict: 'CE',
-        passed: 0,
-        total: testCases.length,
-        timeMs: null,
-        memoryKb: null,
-        compileError: `Judge unavailable: ${truncate(msg)}`,
-        runtimeError: null,
-      };
+      failedVerdict = 'CE';
+      failedRuntimeError = `Judge unavailable: ${truncate(err instanceof Error ? err.message : String(err))}`;
+      break;
     }
 
-    // Compile error short-circuits the whole submission.
-    if (result.compile && result.compile.code !== null && result.compile.code !== 0) {
-      return {
-        verdict: 'CE',
-        passed: 0,
-        total: testCases.length,
-        timeMs: null,
-        memoryKb: null,
-        compileError: truncate(result.compile.stderr || result.compile.stdout),
-        runtimeError: null,
-      };
+    const runResult = result.value;
+
+    // Track max time and memory
+    if (runResult.run.cpu_time_ms && runResult.run.cpu_time_ms > maxTime) {
+      maxTime = runResult.run.cpu_time_ms;
+    }
+    if (runResult.run.memory_bytes && runResult.run.memory_bytes > maxMem) {
+      maxMem = runResult.run.memory_bytes;
     }
 
-    const verdict = classifyRun(result.run, result.run.stdout, tc.expected);
-
-    if (result.run.cpu_time_ms && result.run.cpu_time_ms > maxTime) maxTime = result.run.cpu_time_ms;
-    if (result.run.memory_bytes && result.run.memory_bytes > maxMem) maxMem = result.run.memory_bytes;
+    const verdict = classifyRun(runResult.run, runResult.run.stdout, remainingTestCases[i]!.expected);
 
     if (verdict === 'AC') {
       passed++;
       continue;
     }
 
-    // First failure decides the verdict.
+    // First failure decides the verdict (check precedence)
+    if (!failedVerdict || getVerdictPriority(verdict) > getVerdictPriority(failedVerdict)) {
+      failedVerdict = verdict;
+      failedRuntimeError = verdict === 'RE' ? truncate(runResult.run.stderr) : null;
+    }
+  }
+
+  if (failedVerdict) {
     return {
-      verdict,
+      verdict: failedVerdict,
       passed,
       total: testCases.length,
       timeMs: maxTime || null,
       memoryKb: maxMem ? Math.round(maxMem / 1024) : null,
       compileError: null,
-      runtimeError: verdict === 'RE' ? truncate(result.run.stderr) : null,
+      runtimeError: failedRuntimeError,
     };
   }
 
@@ -177,4 +233,17 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
     compileError: null,
     runtimeError: null,
   };
+}
+
+/** Verdict precedence: higher number = higher priority. */
+function getVerdictPriority(verdict: Verdict): number {
+  switch (verdict) {
+    case 'CE': return 5;
+    case 'TLE': return 4;
+    case 'MLE': return 3;
+    case 'RE': return 2;
+    case 'WA': return 1;
+    case 'AC': return 0;
+    default: return 0;
+  }
 }

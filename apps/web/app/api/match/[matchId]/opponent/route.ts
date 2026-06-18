@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
-import { db } from '@cp-battle/db';
+import { db } from '@zapdos/db';
 import { isValidId } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';

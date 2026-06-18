@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# CP Battle — GCP setup: project, APIs, SSH key
+# Zapdos — GCP setup: project, APIs, SSH key
 #
 # Run this AFTER `gcloud auth login`.
 # Idempotent — safe to re-run.
@@ -30,7 +30,7 @@ gcloud config set compute/zone "$ZONE"
 # SSH key for `gcloud compute ssh`
 if [ ! -f ~/.ssh/google_compute_engine ]; then
   echo "▶ Generating SSH key for gcloud..."
-  ssh-keygen -t rsa -f ~/.ssh/google_compute_engine -C "gcp-cpbattle" -N ""
+  ssh-keygen -t rsa -f ~/.ssh/google_compute_engine -C "gcp-zapdos" -N ""
 fi
 
 echo ""

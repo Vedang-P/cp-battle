@@ -4,7 +4,7 @@
 # Usage (on the web VM, from the repo root):
 #   docker compose --env-file .env.production -f deploy/docker-compose.web.yml up -d
 
-name: cpb-web
+name: zapdos-web
 
 services:
   postgres:
@@ -35,7 +35,7 @@ services:
       retries: 10
 
   web:
-    image: cpb-web:latest
+    image: zapdos-web:latest
     restart: unless-stopped
     env_file: ../.env.production
     environment:
@@ -50,7 +50,7 @@ services:
     expose: ["3000"]
 
   realtime:
-    image: cpb-web:latest
+    image: zapdos-web:latest
     restart: unless-stopped
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/index.ts"]
     env_file: ../.env.production
@@ -64,7 +64,7 @@ services:
     expose: ["3002"]
 
   matchmaker:
-    image: cpb-web:latest
+    image: zapdos-web:latest
     restart: unless-stopped
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/matchmaker.ts"]
     env_file: ../.env.production
@@ -77,7 +77,7 @@ services:
         condition: service_healthy
 
   finalizer:
-    image: cpb-web:latest
+    image: zapdos-web:latest
     restart: unless-stopped
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/finalizer.ts"]
     env_file: ../.env.production
@@ -90,7 +90,7 @@ services:
         condition: service_healthy
 
   bot:
-    image: cpb-web:latest
+    image: zapdos-web:latest
     restart: unless-stopped
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/bot-worker.ts"]
     env_file: ../.env.production

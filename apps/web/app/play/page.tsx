@@ -109,16 +109,26 @@ export default function PlayPage() {
   }, [router]);
 
   return (
-    <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
-      <div className="w-full max-w-sm animate-fade-in space-y-4">
+    <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md animate-fade-in space-y-6">
+        {/* Page header */}
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+            <GlowText color="green" intensity="strong">battle arena</GlowText>
+          </h1>
+          <p className="mt-2 font-mono text-xs text-text-muted">
+            choose your mode — ranked or practice
+          </p>
+        </div>
+
         {/* Ranked Matchmaking */}
         <TerminalWindow title="matchmaking/search.sh">
           <div className="text-center">
-            <h1 className="mb-1 text-base font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-              <GlowText color="green">find match</GlowText>
-            </h1>
+            <h2 className="mb-1 text-base font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+              ranked match
+            </h2>
             <p className="mb-5 font-mono text-xs text-text-muted">
-              paired with opponent of similar skill
+              paired with opponent of similar skill — ELO on the line
             </p>
 
             {error && (
@@ -128,7 +138,7 @@ export default function PlayPage() {
             )}
 
             {queueStatus === 'idle' && (
-              <button onClick={joinQueue} className="btn-primary w-full h-10 font-mono text-sm">
+              <button onClick={joinQueue} className="btn-primary w-full h-11 font-mono text-sm">
                 &gt; join queue
               </button>
             )}
@@ -147,27 +157,28 @@ export default function PlayPage() {
         {/* Practice vs AI */}
         {queueStatus === 'idle' && (
           <TerminalWindow title="practice/solo.sh">
-            <div className="text-center mb-4">
+            <div className="text-center mb-5">
               <h2 className="text-sm font-medium tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
                 practice vs AI
               </h2>
-              <p className="font-mono text-[11px] text-text-muted mt-0.5">no ELO impact — warm up</p>
+              <p className="font-mono text-[11px] text-text-muted mt-0.5">no ELO impact — warm up your skills</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {(['EASY', 'MEDIUM', 'HARD'] as const).map((diff) => (
                 <button
                   key={diff}
                   onClick={() => startPractice(diff)}
                   disabled={startingPractice}
-                  className={`rounded-lg border px-3 py-2.5 font-mono text-xs font-medium transition-all duration-150 ${
+                  className={`flex flex-col items-center rounded-lg border px-3 py-3 font-mono text-xs font-medium transition-all duration-150 ${
                     diff === 'EASY'
-                      ? 'border-success/30 text-success hover:bg-success/10'
+                      ? 'border-success/30 text-success hover:bg-success/10 hover:border-success/50'
                       : diff === 'MEDIUM'
-                      ? 'border-warning/30 text-warning hover:bg-warning/10'
-                      : 'border-error/30 text-error hover:bg-error/10'
+                      ? 'border-warning/30 text-warning hover:bg-warning/10 hover:border-warning/50'
+                      : 'border-error/30 text-error hover:bg-error/10 hover:border-error/50'
                   } ${startingPractice ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {diff === 'EASY' ? 'easy' : diff === 'MEDIUM' ? 'medium' : 'hard'}
+                  <span className="text-sm mb-1">{diff === 'EASY' ? '⚡' : diff === 'MEDIUM' ? '🔥' : '💀'}</span>
+                  <span>{diff === 'EASY' ? 'easy' : diff === 'MEDIUM' ? 'medium' : 'hard'}</span>
                 </button>
               ))}
             </div>

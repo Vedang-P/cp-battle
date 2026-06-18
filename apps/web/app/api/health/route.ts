@@ -8,8 +8,8 @@
  */
 
 import { NextResponse } from 'next/server';
-import { db } from '@cp-battle/db';
-import { pingPiston } from '@cp-battle/judge';
+import { db } from '@zapdos/db';
+import { pingPiston } from '@zapdos/judge';
 import { redis } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';

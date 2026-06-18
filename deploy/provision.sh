@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# CP Battle — provision GCP infrastructure
+# Zapdos — provision GCP infrastructure
 #
 # Creates:
 #   - Static external IP for the web VM
@@ -23,7 +23,7 @@ fi
 
 # ── Static IP for web VM ──────────────────────────────────────
 echo "▶ Ensuring static IP for web VM..."
-WEB_IP_NAME="cpb-web-ip"
+WEB_IP_NAME="zapdos-web-ip"
 WEB_ADDRESS=$(gcloud compute addresses describe "$WEB_IP_NAME" --region="$REGION" --format='value(address)' 2>/dev/null || true)
 if [ -z "$WEB_ADDRESS" ]; then
   gcloud compute addresses create "$WEB_IP_NAME" --region="$REGION"
@@ -34,53 +34,53 @@ echo "  Web public IP: $WEB_ADDRESS"
 # ── Firewall rules ────────────────────────────────────────────
 echo "▶ Ensuring firewall rules..."
 
-gcloud compute firewall-rules describe cpb-allow-http-ssh >/dev/null 2>&1 || \
-  gcloud compute firewall-rules create cpb-allow-http-ssh \
+gcloud compute firewall-rules describe zapdos-allow-http-ssh >/dev/null 2>&1 || \
+  gcloud compute firewall-rules create zapdos-allow-http-ssh \
     --allow tcp:80,tcp:22 \
     --source-ranges 0.0.0.0/0 \
-    --target-tags cpb-web \
+    --target-tags zapdos-web \
     --description "Allow HTTP and SSH to web VM"
 
-gcloud compute firewall-rules describe cpb-allow-judge0-internal >/dev/null 2>&1 || \
-  gcloud compute firewall-rules create cpb-allow-judge0-internal \
+gcloud compute firewall-rules describe zapdos-allow-judge0-internal >/dev/null 2>&1 || \
+  gcloud compute firewall-rules create zapdos-allow-judge0-internal \
     --allow tcp:2358 \
-    --source-tags cpb-web \
-    --target-tags cpb-judge0 \
+    --source-tags zapdos-web \
+    --target-tags zapdos-judge0 \
     --description "Allow web VM to reach Judge0 on :2358"
 
-gcloud compute firewall-rules describe cpb-allow-ssh-judge0 >/dev/null 2>&1 || \
-  gcloud compute firewall-rules create cpb-allow-ssh-judge0 \
+gcloud compute firewall-rules describe zapdos-allow-ssh-judge0 >/dev/null 2>&1 || \
+  gcloud compute firewall-rules create zapdos-allow-ssh-judge0 \
     --allow tcp:22 \
     --source-ranges 0.0.0.0/0 \
-    --target-tags cpb-judge0 \
+    --target-tags zapdos-judge0 \
     --description "Allow SSH to judge0 VM"
 
 # ── Web VM ────────────────────────────────────────────────────
 echo "▶ Ensuring web VM (e2-medium)..."
-gcloud compute instances describe cpb-web --zone="$ZONE" >/dev/null 2>&1 || \
-  gcloud compute instances create cpb-web \
+gcloud compute instances describe zapdos-web --zone="$ZONE" >/dev/null 2>&1 || \
+  gcloud compute instances create zapdos-web \
     --machine-type e2-medium \
     --zone="$ZONE" \
     --image-family ubuntu-2204-lts \
     --image-project ubuntu-os-cloud \
-    --tags cpb-web \
+    --tags zapdos-web \
     --address="$WEB_ADDRESS" \
     --boot-disk-size 30GB \
     --boot-disk-type pd-standard
 
 # ── Judge0 VM ─────────────────────────────────────────────────
 echo "▶ Ensuring Judge0 VM (e2-standard-2)..."
-gcloud compute instances describe cpb-judge0 --zone="$ZONE" >/dev/null 2>&1 || \
-  gcloud compute instances create cpb-judge0 \
+gcloud compute instances describe zapdos-judge0 --zone="$ZONE" >/dev/null 2>&1 || \
+  gcloud compute instances create zapdos-judge0 \
     --machine-type e2-standard-2 \
     --zone="$ZONE" \
     --image-family ubuntu-2204-lts \
     --image-project ubuntu-os-cloud \
-    --tags cpb-judge0 \
+    --tags zapdos-judge0 \
     --boot-disk-size 30GB \
     --boot-disk-type pd-standard
 
-JUDGE0_INTERNAL_IP=$(gcloud compute instances describe cpb-judge0 --zone="$ZONE" --format='value(networkInterfaces[0].networkIP)')
+JUDGE0_INTERNAL_IP=$(gcloud compute instances describe zapdos-judge0 --zone="$ZONE" --format='value(networkInterfaces[0].networkIP)')
 
 echo ""
 echo "✓ Provisioning complete."

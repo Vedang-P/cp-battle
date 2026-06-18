@@ -1,5 +1,5 @@
 {
-  "name": "@cp-battle/match",
+  "name": "@zapdos/match",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,8 +15,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cp-battle/db": "workspace:*",
-    "@cp-battle/elo": "workspace:*"
+    "@zapdos/db": "workspace:*",
+    "@zapdos/elo": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "20.12.12",

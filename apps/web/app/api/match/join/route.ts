@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
 import { redis } from '@/lib/redis';
-import { enqueue, dequeue, QUEUE_KEY } from '@cp-battle/match';
-import { db } from '@cp-battle/db';
+import { enqueue, dequeue, QUEUE_KEY } from '@zapdos/match';
+import { db } from '@zapdos/db';
 
 // ioredis Redis satisfies RedisLike at runtime; cast to satisfy TS
 const queueRedis = redis as any;

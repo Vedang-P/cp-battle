@@ -11,8 +11,8 @@
  * at their own pace.
  */
 
-import { db, type Difficulty, type Prisma, type MatchMode } from '@cp-battle/db';
-import { updateRatings, type GameResult } from '@cp-battle/elo';
+import { db, type Difficulty, type Prisma, type MatchMode } from '@zapdos/db';
+import { updateRatings, type GameResult } from '@zapdos/elo';
 import { MATCH_CONFIG, type MatchModeType, modeConfig } from './config';
 import {
   decideOutcome,

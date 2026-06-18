@@ -20,4 +20,6 @@ export const env = {
   get nextauthUrl() { return optional('NEXTAUTH_URL', 'http://localhost:3000'); },
   get realtimeCorsOrigin() { return optional('REALTIME_CORS_ORIGIN', 'http://localhost:3000'); },
   get judgeConcurrency() { return Number(process.env.JUDGE_CONCURRENCY ?? 4); },
+  get googleClientId() { return optional('GOOGLE_CLIENT_ID', ''); },
+  get googleClientSecret() { return optional('GOOGLE_CLIENT_SECRET', ''); },
 };

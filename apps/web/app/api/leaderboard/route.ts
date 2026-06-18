@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@cp-battle/db';
+import { db } from '@zapdos/db';
 import { redis } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';

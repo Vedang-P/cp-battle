@@ -6,10 +6,10 @@
  * Emits match:end via the realtime bridge so both players are notified.
  */
 
-import { db } from '@cp-battle/db';
-import { finalizeMatch } from '@cp-battle/match';
+import { db } from '@zapdos/db';
+import { finalizeMatch } from '@zapdos/match';
 import { emitToMatch } from '../lib/socket';
-import type { MatchEndPayload } from '@cp-battle/realtime';
+import type { MatchEndPayload } from '@zapdos/realtime';
 
 const POLL_INTERVAL_MS = 5000;
 

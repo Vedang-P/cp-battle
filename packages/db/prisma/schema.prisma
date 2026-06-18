@@ -1,4 +1,4 @@
-// CP Battle — Prisma schema
+// Zapdos — Prisma schema
 // All money tables for the platform. Enums mirror the realtime package types
 // where they cross the wire (Difficulty, Verdict, etc.).
 
@@ -66,30 +66,41 @@ enum SubmissionMode {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  username     String   @unique
-  passwordHash String
-  role         Role     @default(USER)
+  id             String    @id @default(cuid())
+  email          String    @unique
+  username       String    @unique
+  passwordHash   String?   // nullable for OAuth-only users
+  role           Role      @default(USER)
+
+  // OAuth fields
+  provider       String?   // 'credentials' | 'google'
+  providerAccountId String? @unique
 
   // Rating + record. ELO updated by the match-completion job only, never ad-hoc.
-  elo          Int      @default(1200)
-  gamesPlayed  Int      @default(0)
-  wins         Int      @default(0)
-  losses       Int      @default(0)
-  draws        Int      @default(0)
+  elo            Int       @default(1200)
+  gamesPlayed    Int       @default(0)
+  wins           Int       @default(0)
+  losses         Int       @default(0)
+  draws          Int       @default(0)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   // Match participations. We model two FK columns on Match rather than a
   // join table because every match has exactly two players — simpler reads.
-  matchesAsA   Match[]  @relation("MatchPlayerA")
-  matchesAsB   Match[]  @relation("MatchPlayerB")
-  wonMatches   Match[]  @relation("MatchWinner")
+  matchesAsA     Match[]   @relation("MatchPlayerA")
+  matchesAsB     Match[]   @relation("MatchPlayerB")
+  wonMatches     Match[]   @relation("MatchWinner")
 
-  progress     MatchProgress[]
-  submissions  Submission[]
+  progress       MatchProgress[]
+  submissions    Submission[]
+
+  // NextAuth relations
+  accounts       Account[]
+  sessions       Session[]
+
+  // Feedback
+  feedback       Feedback[]
 
   @@index([elo]) // leaderboard / matchmaking range scans
 }
@@ -232,4 +243,58 @@ model Submission {
   @@index([matchId])
   @@index([userId, createdAt])
   @@index([problemId])
+}
+
+// ---------------------------------------------------------------------------
+// NextAuth models (for OAuth adapters)
+// ---------------------------------------------------------------------------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+model Feedback {
+  id        String   @id @default(cuid())
+  message   String
+  userId    String?  // nullable — anonymous if not logged in
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

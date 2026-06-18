@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# CP Battle — seed the production DB
+# Zapdos — seed the production DB
 #
 # Runs inside the `web` container on the web VM:
 #   1. prisma migrate deploy  (apply schema)
@@ -15,27 +15,27 @@ set -euo pipefail
 ZONE=$(gcloud config get-value compute/zone)
 
 echo "▶ Running Prisma migrations..."
-gcloud compute ssh cpb-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
-  cd cp-battle
+gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
+  cd zapdos
   sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml exec -T web \
-    pnpm --filter @cp-battle/db migrate:deploy
+    pnpm --filter @zapdos/db migrate:deploy
 '
 
 echo "▶ Seeding 9 hand-authored problems..."
-gcloud compute ssh cpb-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
-  cd cp-battle
+gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
+  cd zapdos
   sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml exec -T web \
-    pnpm --filter @cp-battle/db seed
+    pnpm --filter @zapdos/db seed
 '
 
 echo "▶ Scraping 394 CSES problems (this takes ~2-4 min)..."
-gcloud compute ssh cpb-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
-  cd cp-battle
+gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
+  cd zapdos
   sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml exec -T web \
     pnpm --filter web scrape-problems -- --cses
 '
 
 echo ""
 echo "✓ DB seeded. Your app is ready at:"
-WEB_ADDRESS=$(gcloud compute addresses describe cpb-web-ip --region="$(gcloud config get-value compute/region)" --format='value(address)')
+WEB_ADDRESS=$(gcloud compute addresses describe zapdos-web-ip --region="$(gcloud config get-value compute/region)" --format='value(address)')
 echo "  http://$WEB_ADDRESS"

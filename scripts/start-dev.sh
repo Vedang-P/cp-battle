@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start all CP Battle dev servers as detached background processes.
+# Start all Zapdos dev servers as detached background processes.
 # Usage: ./scripts/start-dev.sh
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

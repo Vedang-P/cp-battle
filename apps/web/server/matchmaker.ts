@@ -11,11 +11,11 @@
  * HMAC-authenticated realtime bridge.
  */
 
-import { findPair, dequeue, createMatch, QUEUE_KEY, QUEUE_LOCK_KEY, type RedisLike } from '@cp-battle/match';
+import { findPair, dequeue, createMatch, QUEUE_KEY, QUEUE_LOCK_KEY, type RedisLike } from '@zapdos/match';
 import Redis from 'ioredis';
-import { db } from '@cp-battle/db';
-import { matchRoom } from '@cp-battle/realtime';
-import type { MatchStartPayload } from '@cp-battle/realtime';
+import { db } from '@zapdos/db';
+import { matchRoom } from '@zapdos/realtime';
+import type { MatchStartPayload } from '@zapdos/realtime';
 import { createHmac } from 'node:crypto';
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
@@ -30,7 +30,7 @@ const redis = new Redis(redisUrl, {
 });
 
 const redisCompat = redis as unknown as RedisLike;
-const META_PREFIX = 'cpb:matchmaking:meta:';
+const META_PREFIX = 'zapdos:matchmaking:meta:';
 
 /** Emit a socket event via the HMAC-authenticated HTTP bridge. */
 async function emitSocketEvent(room: string, event: string, payload: unknown): Promise<boolean> {
@@ -75,7 +75,14 @@ async function poll(): Promise<void> {
 
     // Read mode from the first player's queue metadata
     const raw = await redis.get(`${META_PREFIX}${playerAId}`);
-    const meta = raw ? JSON.parse(raw) : {};
+    let meta: { mode?: string } = {};
+    if (raw) {
+      try {
+        meta = JSON.parse(raw);
+      } catch {
+        console.warn(`[matchmaker] Failed to parse metadata for ${playerAId}`);
+      }
+    }
     const mode = (meta.mode ?? 'SPRINT') as 'SPRINT' | 'PROGRESSIVE';
 
     console.log(`[matchmaker] Pairing ${playerAId} vs ${playerBId} (${mode})`);

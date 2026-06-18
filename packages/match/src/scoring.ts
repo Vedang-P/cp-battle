@@ -13,7 +13,7 @@
  * All pure functions so they're trivial to unit test.
  */
 
-import type { Difficulty } from '@cp-battle/db';
+import type { Difficulty } from '@zapdos/db';
 import { MATCH_CONFIG, type MatchModeType } from './config';
 
 export interface ProblemScoreInput {

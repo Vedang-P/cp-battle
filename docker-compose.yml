@@ -1,4 +1,4 @@
-# Local development infrastructure for CP Battle.
+# Local development infrastructure for Zapdos.
 #
 # Services:
 #   - Postgres 16  (app database)
@@ -15,18 +15,18 @@
 #   docker compose up -d judge0-server judge0-worker  # judge only
 #   docker compose down                           # stop (keeps data volumes)
 
-name: cp-battle
+name: zapdos
 
 services:
   # ── App infrastructure ──────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: cpb-postgres
+    container_name: zapdos-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: cpb
       POSTGRES_PASSWORD: cpb_local
-      POSTGRES_DB: cpbattle
+      POSTGRES_DB: zapdos
     ports:
       - "5432:5432"
     volumes:
@@ -37,14 +37,14 @@ services:
           cpus: "1"
           memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cpb -d cpbattle"]
+      test: ["CMD-SHELL", "pg_isready -U cpb -d zapdos"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: cpb-redis
+    container_name: zapdos-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "cpb_redis_pass"]
     ports:
@@ -68,7 +68,7 @@ services:
 
   judge0-db:
     image: postgres:16-alpine
-    container_name: cpb-judge0-db
+    container_name: zapdos-judge0-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: judge0
@@ -84,7 +84,7 @@ services:
 
   judge0-redis:
     image: redis:7-alpine
-    container_name: cpb-judge0-redis
+    container_name: zapdos-judge0-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -97,7 +97,7 @@ services:
 
   judge0-server:
     image: mrkushalsm/judge0:latest
-    container_name: cpb-judge0-server
+    container_name: zapdos-judge0-server
     restart: unless-stopped
     privileged: true
     depends_on:
@@ -132,7 +132,7 @@ services:
 
   judge0-worker:
     image: mrkushalsm/judge0:latest
-    container_name: cpb-judge0-worker
+    container_name: zapdos-judge0-worker
     restart: unless-stopped
     privileged: true
     depends_on:

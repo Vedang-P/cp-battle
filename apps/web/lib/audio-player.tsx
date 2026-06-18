@@ -35,8 +35,8 @@ interface Track {
   title: string;
 }
 
-const STORAGE_KEY_MUTED = 'cpbattle-music-muted';
-const STORAGE_KEY_VOLUME = 'cpbattle-music-volume';
+const STORAGE_KEY_MUTED = 'zapdos-music-muted';
+const STORAGE_KEY_VOLUME = 'zapdos-music-volume';
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
