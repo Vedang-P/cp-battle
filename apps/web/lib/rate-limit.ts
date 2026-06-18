@@ -1,8 +1,11 @@
 /**
- * Redis-based sliding window rate limiter.
+ * Redis-based fixed-window rate limiter.
  *
  * Three tiers: per-minute (10), per-hour (50), per-day (200).
  * Returns { allowed: true } or { allowed: false, retryAfterMs, reason }.
+ *
+ * Uses Lua scripts for atomic INCR+PEXPIRE (prevents keys from never
+ * expiring if the process dies between INCR and PEXPIRE).
  */
 
 import { redis } from './redis';
@@ -27,21 +30,35 @@ const WINDOWS: WindowConfig[] = [
   { name: 'day', limit: 200, windowMs: 86_400_000 },
 ];
 
+/**
+ * Lua script: atomically INCR and set PEXPIRE on first increment.
+ * Returns the count after increment.
+ */
+const INCR_EXPIRE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
+
 export async function checkRateLimit(
   key: string,
 ): Promise<RateLimitResult> {
   const now = Date.now();
 
-  // Pipeline all Redis calls for efficiency
-  const pipe = redis.pipeline();
-  const windowKeys: { key: string; limit: number; windowMs: number }[] = [];
+  const windowKeys: { key: string; limit: number; windowMs: number; name: string }[] = [];
 
   for (const window of WINDOWS) {
     const windowKey = `rl:${key}:${window.name}:${Math.floor(now / window.windowMs)}`;
-    windowKeys.push({ key: windowKey, limit: window.limit, windowMs: window.windowMs });
-    pipe.incr(windowKey);
+    windowKeys.push({ key: windowKey, limit: window.limit, windowMs: window.windowMs, name: window.name });
   }
 
+  // Execute all Lua scripts in a pipeline for efficiency
+  const pipe = redis.pipeline();
+  for (const wk of windowKeys) {
+    pipe.eval(INCR_EXPIRE_SCRIPT, 1, wk.key, wk.windowMs);
+  }
   const results = await pipe.exec();
 
   // Check each window for limit violations
@@ -49,33 +66,27 @@ export async function checkRateLimit(
     const wk = windowKeys[i];
     if (!wk) continue;
     const count = (results?.[i]?.[1] as number) ?? 0;
-    const { key: windowKey, limit, windowMs } = wk;
 
-    if (count === 1) {
-      // Set expiry on first hit (fire-and-forget)
-      redis.pexpire(windowKey, windowMs).catch(() => {});
-    }
-
-    if (count > limit) {
-      const windowStart = Math.floor(now / windowMs) * windowMs;
-      const retryAfterMs = windowStart + windowMs - now;
+    if (count > wk.limit) {
+      const windowStart = Math.floor(now / wk.windowMs) * wk.windowMs;
+      const retryAfterMs = windowStart + wk.windowMs - now;
       return {
         allowed: false,
-        limit,
+        limit: wk.limit,
         remaining: 0,
         retryAfterMs,
-        reason: `Rate limit exceeded: ${limit} per ${wk.key.includes('min') ? 'min' : wk.key.includes('hr') ? 'hr' : 'day'}`,
+        reason: `Rate limit exceeded: ${wk.limit} per ${wk.name}`,
       };
     }
   }
 
   // All windows passed — return the tightest window's remaining count
-  const dayKey = `rl:${key}:day:${Math.floor(now / 86_400_000)}`;
-  const remaining = await redis.get(dayKey);
+  const minKey = windowKeys[0]!;
+  const minCount = (results?.[0]?.[1] as number) ?? 0;
   return {
     allowed: true,
-    limit: 200,
-    remaining: Math.max(0, 200 - (Number(remaining) || 0)),
+    limit: minKey.limit,
+    remaining: Math.max(0, minKey.limit - minCount),
   };
 }
 
@@ -83,14 +94,12 @@ export async function checkIpSignupLimit(ip: string): Promise<RateLimitResult> {
   const now = Date.now();
   const hourKey = `rl:signup:${ip}:${Math.floor(now / 3_600_000)}`;
 
-  const pipe = redis.pipeline();
-  pipe.incr(hourKey);
-  const results = await pipe.exec();
-  const count = (results?.[0]?.[1] as number) ?? 0;
-
-  if (count === 1) {
-    redis.pexpire(hourKey, 3_600_000).catch(() => {});
-  }
+  const count = (await redis.eval(
+    INCR_EXPIRE_SCRIPT,
+    1,
+    hourKey,
+    3_600_000,
+  )) as number;
 
   if (count > 5) {
     const windowStart = Math.floor(now / 3_600_000) * 3_600_000;

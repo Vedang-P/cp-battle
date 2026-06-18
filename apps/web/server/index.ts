@@ -34,12 +34,40 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // HTTP bridge: other processes POST events here to be emitted via Socket.IO
+  // HTTP bridge: other processes POST events here to be emitted via Socket.IO.
+  // HMAC-signed with AUTH_SECRET to prevent forgery.
   if (req.url === '/emit' && req.method === 'POST') {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    let bodySize = 0;
+    const MAX_BODY = 1_000_000; // 1MB cap
+    req.on('data', (chunk) => {
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY) {
+        req.destroy();
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Body too large' }));
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => {
       try {
+        // Verify HMAC signature
+        const sig = req.headers['x-internal-signature'] as string | undefined;
+        if (!AUTH_SECRET || !sig) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing signature' }));
+          return;
+        }
+        const expectedSig = createHmac('sha256', AUTH_SECRET).update(body).digest('hex');
+        const sigBuf = Buffer.from(sig);
+        const expectedBuf = Buffer.from(expectedSig);
+        if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid signature' }));
+          return;
+        }
+
         const { room, event, payload } = JSON.parse(body) as {
           room: string;
           event: string;
@@ -139,6 +167,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     matchSockets.get(matchId)?.delete(socket.id);
     socketMatches.delete(socket.id);
     console.log(`[realtime] ${socket.id} left match ${matchId}`);
+  });
+
+  socket.on('match:forfeit', (matchId) => {
+    // Forward the forfeit to the match API via HTTP POST
+    fetch(`http://localhost:3000/api/match/${matchId}/forfeit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: socket.userId }),
+    }).catch(() => {});
+    console.log(`[realtime] ${socket.id} forfeited match ${matchId}`);
   });
 
   socket.on('match:heartbeat', (matchId) => {

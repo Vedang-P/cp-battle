@@ -4,7 +4,7 @@ import { isValidId } from '@/lib/validation';
 import { db } from '@cp-battle/db';
 import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
-import { MATCH_CONFIG, type MatchModeType } from '@cp-battle/match';
+import { MATCH_CONFIG } from '@cp-battle/match';
 import { finalizeMatch } from '@cp-battle/match';
 import { emitToMatch, emitToUser } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
@@ -198,28 +198,54 @@ export async function POST(
         },
       });
 
+      // Re-read the MatchProgress row WITH a lock to prevent the WA+AC race:
+      // two concurrent submissions (WA then AC) must not both see wrongSubmissions=0.
+      const progressRows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: string;
+          wrongSubmissions: number;
+          scoreEarned: number;
+          problemOrder: number;
+          problemId: string;
+        }>
+      >`SELECT * FROM "MatchProgress" WHERE "matchId" = ${matchId} AND "userId" = ${user.id} AND "problemId" = ${problemId} FOR UPDATE`;
+
+      const currentProgress = progressRows[0];
+      if (!currentProgress) {
+        throw new Error('Progress row not found');
+      }
+
+      // Re-check inside the transaction: already solved → no resubmission
+      if (currentProgress.status === 'SOLVED') {
+        return { earlyFinish: false, matchStatus: 'IN_PROGRESS', nextProblem: null, winnerId: null as string | null };
+      }
+
       let earlyFinish = false;
       let matchStatus = 'IN_PROGRESS';
-      let nextProblem = null;
-      let winnerId = null;
+      let nextProblem: { slug: string; problemId: string; problemOrder: number } | null = null;
+      let winnerId: string | null = null;
 
       // If SUBMIT and AC, update progress and unlock next problem
       if (submissionMode === 'SUBMIT' && result.verdict === 'AC') {
+        const scoreEarned = Math.max(
+          0,
+          problem.points - currentProgress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty,
+        );
         await tx.matchProgress.update({
-          where: { id: progress.id },
+          where: { id: currentProgress.id },
           data: {
             status: 'SOLVED',
             solvedAt: new Date(),
-            scoreEarned:
-              problem.points - progress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty,
+            scoreEarned,
           },
         });
 
         // Unlock next problem in the sequence (by problemOrder)
-        const nextOrder = progress.problemOrder + 1;
-        const nextProgress = match.progress.find(
-          (p) => p.userId === user.id && p.problemOrder === nextOrder,
-        );
+        const nextOrder = currentProgress.problemOrder + 1;
+        const nextProgress = await tx.matchProgress.findFirst({
+          where: { matchId: match.id, userId: user.id, problemOrder: nextOrder },
+        });
         if (nextProgress) {
           await tx.matchProgress.update({
             where: { id: nextProgress.id },
@@ -229,7 +255,7 @@ export async function POST(
           nextProblem = nextProb ? { slug: nextProb.slug, problemId: nextProb.id, problemOrder: nextProgress.problemOrder } : null;
         }
 
-        // Check for early finish
+        // Check for early finish — re-read inside the transaction
         const updatedProgress = await tx.matchProgress.findMany({
           where: { matchId: match.id, userId: user.id },
         });
@@ -242,10 +268,10 @@ export async function POST(
         }
       }
 
-      // If SUBMIT and not AC, increment wrong submissions
+      // If SUBMIT and not AC, increment wrong submissions atomically
       if (submissionMode === 'SUBMIT' && result.verdict !== 'AC') {
         await tx.matchProgress.update({
-          where: { id: progress.id },
+          where: { id: currentProgress.id },
           data: { wrongSubmissions: { increment: 1 } },
         });
       }

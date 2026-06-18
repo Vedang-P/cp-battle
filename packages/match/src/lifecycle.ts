@@ -229,11 +229,14 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       };
     }
 
-    // Fetch full player data for ELO calculation
-    const [playerA, playerB] = await Promise.all([
-      tx.user.findUnique({ where: { id: matchRow.playerAId }, select: { elo: true, gamesPlayed: true } }),
-      tx.user.findUnique({ where: { id: matchRow.playerBId }, select: { elo: true, gamesPlayed: true } }),
+    // Fetch full player data for ELO calculation — lock both rows to prevent
+    // concurrent finalizations from overwriting each other's ELO updates.
+    const [playerARows, playerBRows] = await Promise.all([
+      tx.$queryRaw<Array<{ elo: number; gamesPlayed: number }>>`SELECT elo, "gamesPlayed" FROM "User" WHERE id = ${matchRow.playerAId} FOR UPDATE`,
+      tx.$queryRaw<Array<{ elo: number; gamesPlayed: number }>>`SELECT elo, "gamesPlayed" FROM "User" WHERE id = ${matchRow.playerBId} FOR UPDATE`,
     ]);
+    const playerA = playerARows[0];
+    const playerB = playerBRows[0];
 
     const mode = matchRow.mode as MatchModeType;
     const startMs = matchRow.startsAt ? matchRow.startsAt.getTime() : Date.now();
@@ -319,13 +322,12 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
         userId: string,
         newElo: number,
         won: boolean | null,
-        gamesBefore: number,
       ) => {
         await tx.user.update({
           where: { id: userId },
           data: {
             elo: newElo,
-            gamesPlayed: gamesBefore + 1,
+            gamesPlayed: { increment: 1 },
             wins: { increment: won === true ? 1 : 0 },
             losses: { increment: won === false ? 1 : 0 },
             draws: { increment: won === null ? 1 : 0 },
@@ -337,13 +339,11 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
         matchRow.playerAId,
         elo.ratingA,
         outcome === 'DRAW' ? null : outcome === 'A_WINS',
-        playerA?.gamesPlayed ?? 0,
       );
       await applyUserRecord(
         matchRow.playerBId,
         elo.ratingB,
         outcome === 'DRAW' ? null : outcome === 'B_WINS',
-        playerB?.gamesPlayed ?? 0,
       );
     }
 

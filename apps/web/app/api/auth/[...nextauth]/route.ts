@@ -7,14 +7,19 @@ const RATE_LIMIT_KEY = 'ratelimit:login:';
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
+const INCR_EXPIRE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
+
 async function checkLoginRateLimit(ip: string): Promise<{ allowed: boolean; retryAfter?: number }> {
   const key = RATE_LIMIT_KEY + ip;
   try {
-    const current = await redis.incr(key);
-    if (current === 1) {
-      await redis.pexpire(key, WINDOW_MS);
-    }
-    if (current > MAX_ATTEMPTS) {
+    const count = (await redis.eval(INCR_EXPIRE_SCRIPT, 1, key, WINDOW_MS)) as number;
+    if (count > MAX_ATTEMPTS) {
       const ttl = await redis.pttl(key);
       return { allowed: false, retryAfter: Math.ceil(ttl / 1000) };
     }
