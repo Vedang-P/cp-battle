@@ -87,6 +87,8 @@ function verifyJwt(token: string, secret: string): { userId: string; username?: 
     if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null;
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (!data.sub || typeof data.sub !== 'string') return null;
+    // Reject expired tokens (exp is in seconds since epoch)
+    if (typeof data.exp === 'number' && data.exp * 1000 < Date.now()) return null;
     return { userId: data.sub, username: data.name };
   } catch {
     return null;

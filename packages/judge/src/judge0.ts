@@ -164,7 +164,6 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
 
   const params = new URLSearchParams({
     base64_encoded: 'true',
-    wait: 'true',
   });
 
   const body: Record<string, unknown> = {
@@ -178,6 +177,12 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     stack_limit: 128000,
     max_file_size: 4096,
     enable_network: false,
+    // Use per-process limits (rlimit) instead of cgroup limits.
+    // This avoids the --cg flag in isolate, which requires cgroups v1
+    // and doesn't work in Docker Desktop on macOS. On real Linux (EC2)
+    // this also works fine — rlimit is a standard kernel feature.
+    enable_per_process_and_thread_time_limit: true,
+    enable_per_process_and_thread_memory_limit: true,
   };
 
   if (compilerOptions) {
@@ -187,10 +192,11 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
-    httpTimeoutMs ?? cpuTimeLimitMs + 10000,
+    httpTimeoutMs ?? cpuTimeLimitMs + 30000,
   );
 
   try {
+    // Submit the code
     const res = await fetch(`${JUDGE0_URL}/submissions?${params}`, {
       method: 'POST',
       headers: {
@@ -206,24 +212,62 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
       throw new Error(`Judge0 HTTP ${res.status}: ${text}`);
     }
 
-    const data = await res.json() as Judge0SubmissionResponse | Judge0ErrorResponse;
+    const data = await res.json();
 
-    // Judge0 returns an error object instead of status when something is wrong
-    if ('error' in data) {
-      throw new Error(`Judge0 error: ${(data as Judge0ErrorResponse).error}`);
+    // If wait=true isn't supported, Judge0 returns {token: "..."}.
+    // We need to poll for the result.
+    let resultData: Judge0SubmissionResponse;
+    if (data.token && !data.status) {
+      resultData = await pollForResult(data.token, controller.signal);
+    } else {
+      resultData = data as Judge0SubmissionResponse;
     }
 
-    const result = mapJudge0ToPistonResult(data as Judge0SubmissionResponse);
-    return result;
+    // Judge0 returns an error object instead of status when something is wrong
+    if ('error' in resultData) {
+      throw new Error(`Judge0 error: ${(resultData as unknown as Judge0ErrorResponse).error}`);
+    }
+
+    return mapJudge0ToPistonResult(resultData);
   } catch (err) {
     // Map AbortError to TLE so the submission route shows TLE instead of CE
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new TimeoutError(`Judge0 request timed out after ${httpTimeoutMs ?? cpuTimeLimitMs + 10000}ms`);
+      throw new TimeoutError(`Judge0 request timed out after ${httpTimeoutMs ?? cpuTimeLimitMs + 30000}ms`);
     }
     throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Poll Judge0 for a submission result by token.
+ * Retries every 500ms until the submission is no longer "In Queue" or "Processing".
+ */
+async function pollForResult(token: string, signal: AbortSignal): Promise<Judge0SubmissionResponse> {
+  const maxAttempts = 120; // 60 seconds max
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (signal.aborted) throw new TimeoutError('Polling aborted');
+
+    const res = await fetch(`${JUDGE0_URL}/submissions/${token}?base64_encoded=true`, {
+      headers: getJudge0Headers(),
+      signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Judge0 poll HTTP ${res.status}: ${text}`);
+    }
+
+    const data = (await res.json()) as Judge0SubmissionResponse;
+
+    // Status IDs: 1=In Queue, 2=Processing, 3+=Done (AC/WA/TLE/etc.)
+    if (data.status && data.status.id > 2) {
+      return data;
+    }
+  }
+  throw new TimeoutError(`Judge0 submission ${token} timed out after polling`);
 }
 
 /** Liveness check used by health endpoints. */

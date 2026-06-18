@@ -43,7 +43,7 @@ export async function GET() {
   const allOk = !Object.values(services).some((v) => v && typeof v === 'object' && 'error' in v);
 
   return NextResponse.json(
-    { status: allOk ? 'ok' : 'degraded', ts: new Date().toISOString() },
+    { status: allOk ? 'ok' : 'degraded', services, ts: new Date().toISOString() },
     { status: allOk ? 200 : 503 },
   );
 }

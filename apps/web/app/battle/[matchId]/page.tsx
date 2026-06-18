@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { io, Socket } from 'socket.io-client';
-import type { MatchEndPayload, SubmissionVerdictPayload, OpponentSnapshot } from '@cp-battle/realtime';
+import { io, type Socket } from 'socket.io-client';
+import type {
+  MatchEndPayload,
+  SubmissionVerdictPayload,
+  OpponentSnapshot,
+} from '@cp-battle/realtime';
 import { useCountdown } from '@/lib/useCountdown';
 import { BattleHUD } from '@/components/battle/BattleHUD';
 import { ProblemPanel } from '@/components/battle/ProblemPanel';
@@ -12,6 +16,15 @@ import { EditorPanel } from '@/components/battle/EditorPanel';
 import { OutputPanel } from '@/components/battle/OutputPanel';
 import { MatchEndScreen } from '@/components/battle/MatchEndScreen';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import {
+  resumeAudio,
+  playJudged,
+  playVictory,
+  playDefeat,
+  playProblemSolved,
+  playOpponentSolved,
+  playTick,
+} from '@/lib/sounds';
 
 type LanguageId = 'cpp' | 'python' | 'java';
 
@@ -22,6 +35,8 @@ interface Problem {
   timeLimitMs: number;
   memoryLimitMb: number;
   points: number;
+  problemOrder: number;
+  starterCode?: Record<string, string>;
   progress: { status: string; wrongSubmissions: number; scoreEarned: number };
 }
 
@@ -40,14 +55,27 @@ interface VerdictResult {
   memoryKb?: number;
 }
 
-interface Props {
-  params: Promise<{ matchId: string }>;
+interface MatchMeta {
+  isPractice: boolean;
+  practiceDifficulty: string;
+  endsAt: string | null;
+  playerAId: string;
+  playerBId: string;
 }
+
+// Next.js 14.2.x: params is a sync plain object in both server & client components.
+// (The Promise<...> typing is a Next.js 15 feature and would break here.)
+interface Props {
+  params: { matchId: string };
+}
+
+const REALTIME_URL = process.env.NEXT_PUBLIC_REALTIME_URL ?? 'http://localhost:3002';
 
 export default function BattlePage({ params }: Props) {
   const router = useRouter();
   const { data: session } = useSession();
-  const [matchId, setMatchId] = useState<string>('');
+  const matchId = params.matchId;
+
   const [problems, setProblems] = useState<Problem[]>([]);
   const [activeProblem, setActiveProblem] = useState(0);
   const [language, setLanguage] = useState<LanguageId>('cpp');
@@ -58,165 +86,288 @@ export default function BattlePage({ params }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [outputTab, setOutputTab] = useState<'result' | 'description'>('description');
   const [showConfetti, setShowConfetti] = useState(false);
-  const [displayElo, setDisplayElo] = useState(0);
   const [eloDelta, setEloDelta] = useState(0);
-
-  const isPractice = matchId.startsWith('practice-');
-  const practiceDifficulty = isPractice ? matchId.replace('practice-', '') : '';
+  const [loading, setLoading] = useState(true);
+  const [matchMeta, setMatchMeta] = useState<MatchMeta | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
-  const languageRef = useRef(language);
-  const activeProblemRef = useRef(activeProblem);
-  const problemsRef = useRef(problems);
-  const [opponentUserId, setOpponentUserId] = useState<string | null>(null);
+  const userId = session?.user?.id ?? '';
 
-  useEffect(() => {
-    languageRef.current = language;
-  }, [language]);
-
-  useEffect(() => {
-    activeProblemRef.current = activeProblem;
-  }, [activeProblem]);
-
-  useEffect(() => {
-    problemsRef.current = problems;
-  }, [problems]);
-
-  useEffect(() => {
-    params.then((p) => setMatchId(p.matchId));
-  }, [params]);
-
-  // Load saved code for this match
-  useEffect(() => {
-    if (!matchId) return;
-    const key = `cpbattle-code-${matchId}`;
-    const saved = localStorage.getItem(key);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as { language?: LanguageId; code?: string; activeProblem?: number };
-        if (parsed.language) setLanguage(parsed.language);
-        if (parsed.code) setCode(parsed.code);
-        if (typeof parsed.activeProblem === 'number') setActiveProblem(parsed.activeProblem);
-      } catch { /* ignore */ }
+  // ── Fetch opponent state ──────────────────────────────────────────────
+  const fetchOpponent = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/match/${matchId}/opponent`);
+      if (!res.ok) return;
+      const data = await res.json();
+      // opponent route returns { scores: { player, opponent }, ... }
+      setScores({
+        player: data.scores?.player ?? 0,
+        opponent: data.scores?.opponent ?? 0,
+      });
+    } catch {
+      /* ignore */
     }
   }, [matchId]);
 
-  // Save code on change
-  useEffect(() => {
-    if (!matchId) return;
-    const key = `cpbattle-code-${matchId}`;
-    localStorage.setItem(key, JSON.stringify({ language, code, activeProblem }));
-  }, [matchId, language, code, activeProblem]);
-
-  const { timeStr, timeWarning, isFinished } = useCountdown(matchId);
-
-  useEffect(() => {
-    if (isFinished && !matchEnd) {
-      setMatchEnd({
-        matchId,
-        status: 'COMPLETED',
-        winnerId: null,
-        reason: 'time',
-        scoreA: scores.player,
-        scoreB: scores.opponent,
-        eloDeltaA: 0,
-        eloDeltaB: 0,
+  // ── Fetch match problems + meta on mount ──────────────────────────────
+  const fetchMatchData = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/match/${matchId}/problems`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLoadError(data.error ?? `Failed to load match (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      setProblems(data.problems);
+      setMatchMeta({
+        isPractice: !!data.isPractice,
+        practiceDifficulty: data.practiceDifficulty ?? '',
+        endsAt: data.endsAt,
+        playerAId: data.playerAId,
+        playerBId: data.playerBId,
       });
+
+      // Restore saved code for the first unlocked problem
+      const firstUnlocked = (data.problems as Problem[]).find(
+        (p) => p.progress.status === 'UNLOCKED',
+      );
+      if (firstUnlocked) {
+        setActiveProblem(firstUnlocked.problemOrder ?? 0);
+        const savedLang = restoreCode(matchId, firstUnlocked.id);
+        if (savedLang) {
+          setLanguage(savedLang.language);
+          setCode(savedLang.code);
+        } else if (firstUnlocked.starterCode) {
+          const starter = firstUnlocked.starterCode;
+          const lang = (starter.cpp ? 'cpp' : starter.python ? 'python' : 'java') as LanguageId;
+          setLanguage(lang);
+          setCode(starter[lang] ?? DEFAULT_CODE[lang]);
+        }
+      }
+
+      // Fetch opponent initial state so scores are correct
+      fetchOpponent();
+    } catch {
+      setLoadError('Failed to load match');
+    } finally {
+      setLoading(false);
     }
-  }, [isFinished, matchEnd, matchId, scores]);
+  }, [matchId, fetchOpponent]);
 
   useEffect(() => {
-    if (!matchId || !session?.user?.id) return;
-    const userId = session.user.id;
-    const displayName = session.user.name || session.user.email || 'Player';
+    if (matchId) fetchMatchData();
+  }, [matchId, fetchMatchData]);
 
-    const socket = io({
-      path: '/api/socketio',
-      transports: ['websocket', 'polling'],
-      query: {
-        matchId,
-        userId,
-        displayName,
-        isPractice: matchId.startsWith('practice-'),
-      },
-    });
-    socketRef.current = socket;
+  // ── Per-problem code persistence ──────────────────────────────────────
+  useEffect(() => {
+    const currentProb = problems[activeProblem];
+    if (!matchId || !currentProb) return;
+    const key = `cpbattle-code-${matchId}-${currentProb.id}`;
+    localStorage.setItem(key, JSON.stringify({ language, code }));
+  }, [matchId, activeProblem, language, code, problems]);
 
-    socket.on('connect_error', () => {
-      // Reconnection handled by Socket.IO automatically
-    });
+  // ── Countdown ─────────────────────────────────────────────────────────
+  const { timeStr, timeWarning, isFinished } = useCountdown({
+    endsAt: matchMeta?.endsAt ?? null,
+    matchId,
+  });
 
-    socket.on('opponent:progress', (data: OpponentSnapshot) => {
-      if (data.userId === userId) {
-        setScores(prev => ({ ...prev, player: data.score }));
-      } else {
-        setScores(prev => ({ ...prev, opponent: data.score }));
-        setOpponentUserId(data.userId);
+  // Tick sound in the last 10 seconds (once per second change)
+  const lastTickSecRef = useRef<number>(-1);
+  useEffect(() => {
+    if (isFinished || !timeWarning) return;
+    const secs = Number(timeStr.split(':')[1]);
+    if (secs <= 10 && secs !== lastTickSecRef.current) {
+      lastTickSecRef.current = secs;
+      playTick();
+    }
+  }, [timeStr, timeWarning, isFinished]);
+
+  // ── Local match:end fallback if server never sends it ─────────────────
+  useEffect(() => {
+    if (isFinished && !matchEnd && matchMeta) {
+      // Fetch the authoritative result
+      fetch(`/api/match/${matchId}/result`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) {
+            const isPlayerA = matchMeta.playerAId === userId;
+            setMatchEnd({
+              matchId,
+              status: 'COMPLETED',
+              winnerId: data.winnerId ?? null,
+              scoreA: data.scoreA ?? 0,
+              scoreB: data.scoreB ?? 0,
+              eloDeltaA: data.eloDeltaA ?? 0,
+              eloDeltaB: data.eloDeltaB ?? 0,
+              reason: 'time',
+            });
+            setEloDelta(isPlayerA ? (data.eloDeltaA ?? 0) : (data.eloDeltaB ?? 0));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isFinished, matchEnd, matchId, matchMeta, userId]);
+
+  // ── Socket.IO connection ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!matchId || !userId || !session?.user?.username) return;
+
+    let socket: Socket | null = null;
+
+    (async () => {
+      // Fetch a short-lived JWT for the realtime handshake
+      let token: string | null = null;
+      try {
+        const r = await fetch('/api/auth/socket-token');
+        if (r.ok) {
+          const t = await r.json();
+          token = t.token;
+        }
+      } catch {
+        /* fall through; socket will fail to auth */
       }
-    });
+      if (!token) return;
 
-    socket.on('submission:verdict', (data: SubmissionVerdictPayload) => {
-      setVerdict({ verdict: data.verdict, passed: data.passed, total: data.total, error: data.error, timeMs: data.timeMs ?? undefined, memoryKb: data.memoryKb ?? undefined });
-      setIsSubmitting(false);
-      setOutputTab('result');
-    });
+      socket = io(REALTIME_URL, {
+        transports: ['websocket', 'polling'],
+        auth: { token },
+      });
+      socketRef.current = socket;
 
-    socket.on('match:end', (data: MatchEndPayload) => {
-      setMatchEnd(data);
-      const elo = data.scoreA > data.scoreB ? data.eloDeltaA : data.eloDeltaB;
-      setDisplayElo(elo);
-      if (data.scoreA > data.scoreB) {
-        setEloDelta(data.eloDeltaA);
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 4000);
-      } else if (data.scoreA < data.scoreB) {
-        setEloDelta(data.eloDeltaA);
-      } else {
-        setEloDelta(0);
-      }
-    });
+      socket.on('connect', () => {
+        socket!.emit('match:join', matchId, (ok: boolean) => {
+          if (!ok) console.warn('[battle] server rejected match:join');
+        });
+      });
 
-    socket.on('problem:unlocked', () => {
-      // Problem list will be refreshed via fetch or next submission
-    });
+      socket.on('connect_error', (err: Error) => {
+        console.warn('[battle] socket connect error:', err.message);
+      });
+
+      socket.on('opponent:progress', (data: OpponentSnapshot) => {
+        if (data.userId === userId) {
+          setScores((prev) => ({ ...prev, player: data.score }));
+        } else {
+          setScores((prev) => ({ ...prev, opponent: data.score }));
+        }
+      });
+
+      socket.on('submission:verdict', (data: SubmissionVerdictPayload) => {
+        // Only react to OUR OWN verdicts. Opponent verdicts are filtered out
+        // so they don't unlock our submit button or pollute our output panel.
+        if (data.userId !== userId) {
+          // Opponent got a verdict — maybe play a tension sound
+          if (data.verdict === 'AC') playOpponentSolved();
+          return;
+        }
+        setVerdict({
+          verdict: data.verdict,
+          passed: data.passed,
+          total: data.total,
+          error: data.error,
+          timeMs: data.timeMs ?? undefined,
+          memoryKb: data.memoryKb ?? undefined,
+        });
+        setIsSubmitting(false);
+        setOutputTab('result');
+        resumeAudio();
+        playJudged(data.verdict);
+        if (data.verdict === 'AC') playProblemSolved();
+      });
+
+      socket.on('match:end', (data: MatchEndPayload) => {
+        if (!matchMeta) return;
+        const isPlayerA = matchMeta.playerAId === userId;
+        const myDelta = isPlayerA ? data.eloDeltaA : data.eloDeltaB;
+        const opponentDelta = isPlayerA ? data.eloDeltaB : data.eloDeltaA;
+        const myScore = isPlayerA ? data.scoreA : data.scoreB;
+        const oppScore = isPlayerA ? data.scoreB : data.scoreA;
+        const iWon = data.winnerId === userId;
+        const isDraw = data.winnerId === null;
+
+        setMatchEnd(data);
+        setEloDelta(myDelta);
+        setScores({ player: myScore, opponent: oppScore });
+
+        resumeAudio();
+        if (iWon) {
+          setShowConfetti(true);
+          playVictory();
+          setTimeout(() => setShowConfetti(false), 5000);
+        } else if (!isDraw) {
+          playDefeat();
+        }
+        void opponentDelta; // available if needed later
+      });
+
+      socket.on('problem:unlocked', () => {
+        // Re-fetch the full problem set so the newly unlocked problem appears
+        fetchMatchData();
+      });
+
+      socket.on('opponent:solved', () => {
+        playOpponentSolved();
+      });
+    })();
 
     return () => {
-      socket.emit('match:leave', matchId);
-      socket.disconnect();
+      if (socket) {
+        socket.emit('match:leave', matchId);
+        socket.disconnect();
+      }
       socketRef.current = null;
     };
-  }, [matchId, session?.user?.id, session?.user?.name, session?.user?.email]);
+  }, [matchId, userId, session?.user?.username, matchMeta, fetchMatchData]);
 
+  // ── Handlers ──────────────────────────────────────────────────────────
   const currentProblem = problems[activeProblem];
 
   const handleLanguageChange = useCallback((lang: LanguageId) => {
     setLanguage(lang);
-    if (!isSubmitting) {
+    if (currentProblem?.starterCode?.[lang]) {
+      setCode(currentProblem.starterCode[lang]!);
+    } else {
       setCode(DEFAULT_CODE[lang]);
     }
-  }, [isSubmitting]);
+  }, [currentProblem]);
 
   const handleRun = useCallback(async () => {
     if (!currentProblem || isSubmitting) return;
     setIsSubmitting(true);
+    setVerdict(null);
     setOutputTab('result');
     try {
-      const res = await fetch('/api/judge/run', {
+      const res = await fetch(`/api/match/${matchId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          matchId,
           problemId: currentProblem.id,
           language,
           code,
+          mode: 'RUN',
         }),
       });
       const data = await res.json();
-      setVerdict({ verdict: data.verdict || data.error, passed: data.passed ?? 0, total: data.total ?? 0, error: data.error, timeMs: data.timeMs, memoryKb: data.memoryKb });
-      setOutputTab('result');
+      if (data.error) {
+        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
+        setIsSubmitting(false);
+      } else {
+        // Verdict may come back inline (RUN mode) or via socket
+        setVerdict({
+          verdict: data.verdict,
+          passed: data.passed ?? 0,
+          total: data.total ?? 0,
+          error: data.error,
+          timeMs: data.timeMs ?? undefined,
+          memoryKb: data.memoryKb ?? undefined,
+        });
+        setIsSubmitting(false);
+      }
     } catch {
       setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
-    } finally {
       setIsSubmitting(false);
     }
   }, [currentProblem, isSubmitting, matchId, language, code]);
@@ -234,6 +385,7 @@ export default function BattlePage({ params }: Props) {
           problemId: currentProblem.id,
           language,
           code,
+          mode: 'SUBMIT',
         }),
       });
       const data = await res.json();
@@ -241,7 +393,9 @@ export default function BattlePage({ params }: Props) {
         setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
         setIsSubmitting(false);
       }
-      // Verdict arrives via socket
+      // Verdict arrives via socket (submission:verdict) for SUBMIT mode.
+      // If earlyFinish fired, the server returns the verdict inline too —
+      // the socket handler will set it, so we don't double-set here.
     } catch {
       setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
       setIsSubmitting(false);
@@ -249,36 +403,21 @@ export default function BattlePage({ params }: Props) {
   }, [currentProblem, isSubmitting, matchId, language, code]);
 
   const handleForfeit = useCallback(async () => {
-    if (!confirm('Forfeit this match?')) return;
+    if (!confirm('Forfeit this match? This counts as a loss.')) return;
     try {
       await fetch(`/api/match/${matchId}/forfeit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, code }),
+        body: JSON.stringify({}),
       });
-    } catch { /* ignore */ }
-  }, [matchId, language, code]);
+    } catch {
+      /* ignore */
+    }
+  }, [matchId]);
 
-  useEffect(() => {
-    if (!socketRef.current || !matchId || !session?.user?.id) return;
-    const socket = socketRef.current;
-
-    return () => {
-      socket.off('opponent:progress');
-      socket.off('submission:verdict');
-      socket.off('match:end');
-      socket.off('problem:unlocked');
-      socket.off('timer:sync');
-    };
-  }, [matchId, session?.user?.id]);
-
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts (Ctrl+Enter to submit; avoid Ctrl+R which is refresh) ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
-        e.preventDefault();
-        handleRun();
-      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleSubmit();
@@ -286,32 +425,44 @@ export default function BattlePage({ params }: Props) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleRun, handleSubmit]);
+  }, [handleSubmit]);
 
-  // Warning on leave
+  // ── Warn before leaving an in-progress match ──────────────────────────
   useEffect(() => {
-    if (matchEnd || isPractice) return;
+    if (matchEnd || matchMeta?.isPractice) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = '';
+      e.returnValue = 'Leaving will forfeit the match.';
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [matchEnd, isPractice]);
+  }, [matchEnd, matchMeta?.isPractice]);
+
+  // ── Render ────────────────────────────────────────────────────────────
+  if (loadError) {
+    return (
+      <main className="flex h-[calc(100vh-3rem)] flex-col items-center justify-center gap-4">
+        <p className="font-mono text-error glow-red">{loadError}</p>
+        <button onClick={() => router.push('/play')} className="btn btn-ghost">
+          Back to lobby
+        </button>
+      </main>
+    );
+  }
 
   if (matchEnd) {
     return (
       <MatchEndScreen
         matchEnd={matchEnd}
-        myUserId={session?.user?.id || ''}
-        isPractice={isPractice}
-        practiceDifficulty={practiceDifficulty}
+        myUserId={userId}
+        isPractice={matchMeta?.isPractice ?? false}
+        practiceDifficulty={matchMeta?.practiceDifficulty ?? ''}
         eloDelta={eloDelta}
-        displayElo={displayElo}
+        displayElo={Math.abs(eloDelta)}
         showConfetti={showConfetti}
         solvedCount={{
-          player: matchEnd.scoreA,
-          opponent: matchEnd.scoreB,
+          player: scores.player,
+          opponent: scores.opponent,
         }}
         totalProblems={problems.length}
         onRematch={() => router.push('/play')}
@@ -320,7 +471,7 @@ export default function BattlePage({ params }: Props) {
     );
   }
 
-  if (!currentProblem) {
+  if (loading || !currentProblem) {
     return (
       <main className="flex h-[calc(100vh-3rem)] items-center justify-center">
         <LoadingSpinner label="loading match..." />
@@ -341,7 +492,7 @@ export default function BattlePage({ params }: Props) {
         scores={scores}
         timeStr={timeStr}
         timeWarning={timeWarning}
-        isPractice={isPractice}
+        isPractice={matchMeta?.isPractice ?? false}
         onSwitchProblem={setActiveProblem}
         onForfeit={handleForfeit}
       />
@@ -367,4 +518,20 @@ export default function BattlePage({ params }: Props) {
       />
     </main>
   );
+}
+
+/** Read saved code for a (matchId, problemId) pair from localStorage. */
+function restoreCode(matchId: string, problemId: string): { language: LanguageId; code: string } | null {
+  try {
+    const key = `cpbattle-code-${matchId}-${problemId}`;
+    const saved = localStorage.getItem(key);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved) as { language?: LanguageId; code?: string };
+    if (parsed.language && parsed.code) {
+      return { language: parsed.language, code: parsed.code };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }

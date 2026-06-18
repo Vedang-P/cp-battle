@@ -6,7 +6,7 @@ import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
 import { MATCH_CONFIG, type MatchModeType } from '@cp-battle/match';
 import { finalizeMatch } from '@cp-battle/match';
-import { emitToMatch } from '@/lib/socket';
+import { emitToMatch, emitToUser } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
@@ -284,10 +284,13 @@ export async function POST(
 
     // --- Emit Socket.IO events ---
 
-    // 1. Emit submission verdict to the match room (both players see it)
-    const verdictPayload: SubmissionVerdictPayload = {
+    // 1. Build the verdict payload WITH the submitter's userId (so the client
+    //    can filter whose verdict it is) and the full error (only sent to the
+    //    submitter, not the opponent).
+    const fullVerdictPayload: SubmissionVerdictPayload = {
       matchId,
       submissionId: submission.id,
+      userId: user.id,
       problemId,
       problemOrder: progress.problemOrder,
       verdict: result.verdict as SubmissionVerdictPayload['verdict'],
@@ -297,25 +300,34 @@ export async function POST(
       memoryKb: result.memoryKb,
       error: result.compileError ?? result.runtimeError ?? undefined,
     };
-    await emitToMatch(matchId, 'submission:verdict', verdictPayload);
+    // Sanitized version for the opponent (no error text — prevents leaking
+    // compile/runtime errors that hint at the expected approach).
+    const sanitizedVerdictPayload: SubmissionVerdictPayload = {
+      ...fullVerdictPayload,
+      error: undefined,
+    };
 
-    // 2. Emit opponent progress snapshot to the match room
+    // 2. Build progress snapshots for both players.
     const opponentId = user.id === match.playerAId ? match.playerBId : match.playerAId;
     const [playerSnapshot, opponentSnapshot] = await Promise.all([
       buildOpponentSnapshot(matchId, user.id, match.totalProblems),
       buildOpponentSnapshot(matchId, opponentId, match.totalProblems),
     ]);
 
-    // 3. Emit all socket events in parallel
-    const socketPromises = [
-      emitToMatch(matchId, 'submission:verdict', verdictPayload),
+    // 3. Emit in parallel:
+    //    - Full verdict (with errors) ONLY to the submitter.
+    //    - Sanitized verdict (no errors) to the whole match room (so the
+    //      opponent sees the verdict happened, but not the error text).
+    //    - Both progress snapshots to the whole room.
+    const socketPromises: Promise<boolean>[] = [
+      emitToUser(user.id, 'submission:verdict', fullVerdictPayload),
+      emitToMatch(matchId, 'submission:verdict', sanitizedVerdictPayload),
       emitToMatch(matchId, 'opponent:progress', playerSnapshot),
       emitToMatch(matchId, 'opponent:progress', opponentSnapshot),
     ];
     if (postJudgeResult.nextProblem) {
-      const { emitSocketEvent } = await import('@/lib/socket');
       socketPromises.push(
-        emitSocketEvent(`user:${user.id}`, 'problem:unlocked', {
+        emitToUser(user.id, 'problem:unlocked', {
           problemOrder: postJudgeResult.nextProblem.problemOrder,
         }),
       );

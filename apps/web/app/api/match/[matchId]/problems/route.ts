@@ -68,6 +68,13 @@ export async function GET(
       problems,
       mode: match.mode,
       totalProblems: match.totalProblems,
+      isPractice: match.isPractice,
+      practiceDifficulty: match.practiceDifficulty,
+      endsAt: match.endsAt?.toISOString() ?? null,
+      durationSeconds: match.durationSec,
+      playerAId: match.playerAId,
+      playerBId: match.playerBId,
+      status: match.status,
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {

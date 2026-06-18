@@ -60,7 +60,6 @@ export function EditorPanel({
             className="btn-ghost h-7 font-mono text-xs"
           >
             {submitting ? 'running...' : '> run'}
-            <span className="ml-1.5 text-text-muted/40 hidden sm:inline">^R</span>
           </button>
           <button
             onClick={onSubmit}
@@ -77,7 +76,7 @@ export function EditorPanel({
       <div className="flex-1">
         <MonacoEditor
           height="100%"
-          language={language === 'cpp' ? 'cpp' : language}
+          language={language}
           theme="terminal"
           value={code}
           onChange={(v) => onCodeChange(v ?? '')}

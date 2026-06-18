@@ -19,9 +19,6 @@ interface MatchEndScreenProps {
   onDashboard: () => void;
 }
 
-// The actual MatchEndPayload from @cp-battle/realtime doesn't have submittedAt,
-// but we accept the full payload and only use the fields that exist.
-
 export function MatchEndScreen({
   matchEnd,
   myUserId,
@@ -40,7 +37,7 @@ export function MatchEndScreen({
 
   return (
     <>
-      <ConfettiCanvas active={showConfetti} duration={4000} />
+      <ConfettiCanvas active={showConfetti} duration={5000} />
       <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
         <TerminalWindow title="match/result.log" className="w-full max-w-sm">
           <div className="text-center">
@@ -57,11 +54,11 @@ export function MatchEndScreen({
             </h1>
 
             <div className="mt-4 space-y-1">
-              <div className="font-mono text-sm text-text-secondary tabular-nums">
-                {matchEnd.scoreA} — {matchEnd.scoreB}
+              <div className="font-mono text-2xl text-text-secondary tabular-nums">
+                {solvedCount.player} <span className="text-text-muted text-base">:</span> {solvedCount.opponent}
               </div>
-              <div className="font-mono text-xs text-text-muted">
-                {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
+              <div className="font-mono text-[11px] text-text-muted">
+                points · {totalProblems} problems
               </div>
             </div>
 

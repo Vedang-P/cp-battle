@@ -118,7 +118,7 @@ export interface MatchProblemBrief {
 export interface ServerEvents {
   /** Fired when both players are in the room and the clock should start. */
   'match:start': (payload: MatchStartPayload) => void;
-  /** Verdict for YOUR own submission (full detail, your own code). */
+  /** Verdict for a submission in the match (full detail only for the submitter). */
   'submission:verdict': (payload: SubmissionVerdictPayload) => void;
   /** Sanitized opponent progress update — the core "pressure" feed. */
   'opponent:progress': (payload: OpponentSnapshot) => void;
@@ -128,6 +128,8 @@ export interface ServerEvents {
   'timer:sync': (payload: { endsAt: string; remainingMs: number }) => void;
   /** Match concluded with final scores and ELO deltas. */
   'match:end': (payload: MatchEndPayload) => void;
+  /** Fired when the opponent solves a problem (so the client can play a sound). */
+  'opponent:solved': (payload: { problemOrder: number }) => void;
   /** Generic error channel for things like "not your match". */
   'match:error': (payload: { message: string }) => void;
 }
@@ -135,6 +137,8 @@ export interface ServerEvents {
 export interface SubmissionVerdictPayload {
   matchId: string;
   submissionId: string;
+  /** The user who made this submission. Clients filter on this to know if it's theirs. */
+  userId: string;
   problemId: string;
   problemOrder: number;
   verdict: SubmissionVerdict;

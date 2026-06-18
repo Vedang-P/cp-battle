@@ -8,6 +8,7 @@
     "dev:realtime": "tsx watch --env-file=../../.env server/index.ts",
     "dev:matchmaker": "tsx watch --env-file=../../.env server/matchmaker.ts",
     "dev:finalizer": "tsx watch --env-file=../../.env server/finalizer.ts",
+    "dev:bot": "tsx watch --env-file=../../.env server/bot-worker.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

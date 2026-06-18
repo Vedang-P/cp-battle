@@ -124,6 +124,9 @@ importers:
         specifier: 5.14.0
         version: 5.14.0(prisma@5.14.0)
     devDependencies:
+      '@types/node':
+        specifier: 20.12.12
+        version: 20.12.12
       prisma:
         specifier: 5.14.0
         version: 5.14.0
@@ -146,6 +149,9 @@ importers:
         specifier: workspace:*
         version: link:../db
     devDependencies:
+      '@types/node':
+        specifier: 20.12.12
+        version: 20.12.12
       typescript:
         specifier: 5.4.5
         version: 5.4.5
@@ -159,6 +165,9 @@ importers:
         specifier: workspace:*
         version: link:../elo
     devDependencies:
+      '@types/node':
+        specifier: 20.12.12
+        version: 20.12.12
       typescript:
         specifier: 5.4.5
         version: 5.4.5

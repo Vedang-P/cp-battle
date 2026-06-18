@@ -123,6 +123,7 @@ async function scheduleBotSubmission(
         const verdictPayload: SubmissionVerdictPayload = {
           matchId,
           submissionId: submission.id,
+          userId: botUserId,
           problemId,
           problemOrder,
           verdict: 'WA',
@@ -203,6 +204,7 @@ async function scheduleBotSubmission(
       const verdictPayload: SubmissionVerdictPayload = {
         matchId,
         submissionId: submission.id,
+        userId: botUserId,
         problemId,
         problemOrder,
         verdict: 'AC',
