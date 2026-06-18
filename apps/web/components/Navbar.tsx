@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { MusicToggle } from './MusicToggle';
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -17,7 +18,7 @@ export function Navbar() {
       setTime(now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }));
     };
     update();
-    const interval = setInterval(update, 10000);
+    const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -70,11 +71,14 @@ export function Navbar() {
             </>
           )}
           <span className="text-border-medium">|</span>
+          <MusicToggle />
+          <span className="text-border-medium">|</span>
           <span className="font-mono text-xs text-text-muted tabular-nums">{time}</span>
         </div>
 
         {/* Mobile: hamburger + clock */}
         <div className="flex sm:hidden items-center gap-3">
+          <MusicToggle />
           <span className="font-mono text-xs text-text-muted tabular-nums">{time}</span>
           <button
             onClick={() => setMobileOpen(!mobileOpen)}

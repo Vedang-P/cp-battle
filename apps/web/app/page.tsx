@@ -1,68 +1,199 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { MatrixRain } from '@/components/MatrixRain';
 import { GlowText } from '@/components/GlowText';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
-const FEATURES = [
-  {
-    icon: '>',
-    title: '1v1 Duels',
-    desc: 'Real-time matches against similar skill',
-    cmd: '/duel',
-  },
-  {
-    icon: '#',
-    title: 'Race Mode',
-    desc: 'Timed problems, first to finish wins',
-    cmd: '/race',
-  },
-  {
-    icon: '^',
-    title: 'ELO Ranked',
-    desc: 'Skill-based matchmaking and rankings',
-    cmd: '/rank',
-  },
-] as const;
+/**
+ * Landing page — an interactive terminal.
+ *
+ * Visitors can type commands: help, play, rank, signup, about.
+ * Replaces the generic hero + 3-card feature grid with a single
+ * playable terminal that showcases the hacker aesthetic.
+ */
+
+interface Line {
+  type: 'input' | 'output' | 'system';
+  text: string;
+}
+
+const HELP_TEXT = [
+  'available commands:',
+  '  help     — show this help',
+  '  play     — start a coding battle',
+  '  rank     — view leaderboard',
+  '  signup   — create an account',
+  '  about    — what is cp-battle?',
+  '  clear    — clear the terminal',
+];
+
+const ABOUT_TEXT = [
+  'cp-battle — 1v1 competitive programming duels',
+  '',
+  'race head-to-head against another programmer.',
+  'progressive-unlock problems (easy -> medium).',
+  'live timer, opponent progress, ELO ladder.',
+  '',
+  '400+ real problems from CSES. judge0 sandbox.',
+  'c++ / python / java. 20-minute matches.',
+];
 
 export default function HomePage() {
+  const [lines, setLines] = useState<Line[]>([
+    { type: 'system', text: 'CP-OS v1.0.0 — boot complete' },
+    { type: 'system', text: 'Type "help" to get started.' },
+  ]);
+  const [input, setInput] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on new lines
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [lines]);
+
+  const addOutput = (texts: string[]) => {
+    setLines((prev) => [...prev, ...texts.map((t) => ({ type: 'output' as const, text: t }))]);
+  };
+
+  const runCommand = (cmd: string) => {
+    const trimmed = cmd.trim().toLowerCase();
+    setLines((prev) => [...prev, { type: 'input', text: cmd }]);
+
+    if (!trimmed) return;
+
+    setHistory((prev) => [...prev, cmd]);
+    setHistoryIdx(-1);
+
+    switch (trimmed) {
+      case 'help':
+        addOutput(HELP_TEXT);
+        break;
+      case 'about':
+        addOutput(ABOUT_TEXT);
+        break;
+      case 'clear':
+        setLines([]);
+        break;
+      case 'play':
+        addOutput(['redirecting to matchmaking lobby...', '> /play']);
+        setTimeout(() => { window.location.href = '/play'; }, 800);
+        break;
+      case 'rank':
+      case 'leaderboard':
+        addOutput(['loading leaderboard...', '> /leaderboard']);
+        setTimeout(() => { window.location.href = '/leaderboard'; }, 800);
+        break;
+      case 'signup':
+      case 'register':
+        addOutput(['creating new account...', '> /signup']);
+        setTimeout(() => { window.location.href = '/signup'; }, 800);
+        break;
+      case 'login':
+      case 'signin':
+        addOutput(['> /signin']);
+        setTimeout(() => { window.location.href = '/signin'; }, 800);
+        break;
+      case 'ls':
+        addOutput(['help  play  rank  signup  about  clear']);
+        break;
+      case 'whoami':
+        addOutput(['guest@cp-battle — type "signup" to register']);
+        break;
+      case 'sudo':
+        addOutput(['nice try. this isn\'t your system.']);
+        break;
+      default:
+        addOutput([`command not found: ${trimmed} — type "help" for commands`]);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      runCommand(input);
+      setInput('');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (history.length === 0) return;
+      const newIdx = historyIdx === -1 ? history.length - 1 : Math.max(0, historyIdx - 1);
+      setHistoryIdx(newIdx);
+      setInput(history[newIdx] ?? '');
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx === -1) return;
+      const newIdx = historyIdx + 1;
+      if (newIdx >= history.length) {
+        setHistoryIdx(-1);
+        setInput('');
+      } else {
+        setHistoryIdx(newIdx);
+        setInput(history[newIdx] ?? '');
+      }
+    }
+  };
+
   return (
-    <main className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-6">
-      <MatrixRain opacity={0.04} speed={0.7} />
+    <main className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4 py-8">
+      <MatrixRain opacity={0.03} speed={0.5} />
 
-      <div className="relative z-10 mx-auto max-w-xl text-center">
-        {/* Hero — terminal style */}
-        <div className="mb-8">
-          <div className="font-mono text-xs text-text-muted mb-4">
-            <span className="text-brand">root</span>
-            <span className="text-text-muted">@</span>
-            <span className="text-text-secondary">cp-battle</span>
-            <span className="text-text-muted">:</span>
-            <span className="text-accent-cyan">~</span>
-            <span className="text-text-muted">$</span>
-          </div>
-
-          <h1 className="text-5xl font-semibold tracking-tight sm:text-6xl" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif', letterSpacing: '-0.03em' }}>
-            <GlowText color="green" intensity="strong">
-              Code.
-            </GlowText>
-            {' '}
-            <span className="text-text-primary">Race.</span>
-            <br />
-            <GlowText color="green" intensity="strong">
-              Compete.
-            </GlowText>
+      <div className="relative z-10 w-full max-w-2xl">
+        {/* Title above the terminal */}
+        <div className="mb-6 text-center">
+          <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk), sans-serif', letterSpacing: '-0.03em' }}>
+            <GlowText color="green" intensity="strong">cp-battle</GlowText>
           </h1>
-
-          <p className="mt-5 text-base text-text-muted leading-relaxed" style={{ letterSpacing: '-0.011em' }}>
-            Head-to-head programming duels. Solve the same problems faster than
-            your opponent and climb the ELO ladder.
+          <p className="mt-2 text-sm text-text-muted">
+            1v1 competitive programming duels — race, rank, repeat.
           </p>
         </div>
 
-        {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+        {/* Interactive terminal */}
+        <TerminalWindow title="guest@cp-battle: ~" className="w-full">
+          <div
+            ref={scrollRef}
+            className="h-80 overflow-y-auto font-mono text-sm leading-relaxed"
+            onClick={() => inputRef.current?.focus()}
+          >
+            {lines.map((line, i) => (
+              <div key={i} className={
+                line.type === 'input'
+                  ? 'text-text-primary'
+                  : line.type === 'system'
+                  ? 'text-accent-cyan'
+                  : 'text-text-muted'
+              }>
+                {line.type === 'input' && <span className="text-brand">$ </span>}
+                {line.text || '\u00A0'}
+              </div>
+            ))}
+
+            {/* Input line */}
+            <div className="flex items-center text-text-primary">
+              <span className="text-brand">$</span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="ml-2 flex-1 bg-transparent text-text-primary outline-none caret-brand"
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+              <span className="animate-cursor-blink text-brand text-xs">█</span>
+            </div>
+          </div>
+        </TerminalWindow>
+
+        {/* Quick action buttons below terminal */}
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link href="/signup" className="btn-primary h-10 px-8 text-sm">
             &gt; start
           </Link>
@@ -71,17 +202,9 @@ export default function HomePage() {
           </Link>
         </div>
 
-        {/* Features — terminal windows */}
-        <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {FEATURES.map((f) => (
-            <TerminalWindow key={f.title} title={f.cmd} showDots={false}>
-              <div className="text-center">
-                <div className="text-2xl mb-2">{f.icon}</div>
-                <div className="text-sm font-medium text-text-primary tracking-tight">{f.title}</div>
-                <div className="mt-1 text-xs text-text-muted leading-relaxed">{f.desc}</div>
-              </div>
-            </TerminalWindow>
-          ))}
+        {/* Stats line */}
+        <div className="mt-8 text-center font-mono text-xs text-text-muted/60">
+          400+ problems · c++ / python / java · judge0 sandbox · ELO ranked
         </div>
       </div>
     </main>

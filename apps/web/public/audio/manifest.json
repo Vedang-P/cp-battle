@@ -1,0 +1,7 @@
+{
+  "tracks": [
+    { "file": "track-01.mp3", "title": "Track 1" },
+    { "file": "track-02.mp3", "title": "Track 2" },
+    { "file": "track-03.mp3", "title": "Track 3" }
+  ]
+}
