@@ -11,7 +11,7 @@
  * HMAC-authenticated realtime bridge.
  */
 
-import { findPair, dequeue, createMatch, QUEUE_KEY, QUEUE_LOCK_KEY, type RedisLike } from '@zapdos/match';
+import { findPair, dequeue, enqueue, createMatch, QUEUE_KEY, QUEUE_LOCK_KEY, type RedisLike } from '@zapdos/match';
 import Redis from 'ioredis';
 import { db } from '@zapdos/db';
 import { matchRoom } from '@zapdos/realtime';
@@ -88,15 +88,29 @@ async function poll(): Promise<void> {
     console.log(`[matchmaker] Pairing ${playerAId} vs ${playerBId} (${mode})`);
 
     // Remove both from queue BEFORE creating the match, so a concurrent
-    // findPair can't re-pair them. If createMatch fails, they'll need to
-    // re-queue — but that's better than double-matching.
+    // findPair can't re-pair them.
+    const metaA = await redis.get(`${META_PREFIX}${playerAId}`);
+    const metaB = await redis.get(`${META_PREFIX}${playerBId}`);
     await Promise.all([
       dequeue(redisCompat, playerAId),
       dequeue(redisCompat, playerBId),
     ]);
 
     // Create the match
-    const matchId = await createMatch(playerAId, playerBId, mode);
+    let matchId;
+    try {
+      matchId = await createMatch(playerAId, playerBId, mode);
+    } catch (err) {
+      console.error(`[matchmaker] createMatch failed, re-queuing both players:`, err);
+      // Re-queue both players so they're not orphaned
+      const requeueA = metaA ? JSON.parse(metaA) : { elo: 1200, joinedAtMs: Date.now(), mode };
+      const requeueB = metaB ? JSON.parse(metaB) : { elo: 1200, joinedAtMs: Date.now(), mode };
+      await Promise.all([
+        enqueue(redisCompat, { userId: playerAId, elo: requeueA.elo, joinedAtMs: requeueA.joinedAtMs, mode }),
+        enqueue(redisCompat, { userId: playerBId, elo: requeueB.elo, joinedAtMs: requeueB.joinedAtMs, mode }),
+      ]);
+      return;
+    }
     console.log(`[matchmaker] Match created: ${matchId} (${mode})`);
 
     // Fetch full match data to build match:start payload

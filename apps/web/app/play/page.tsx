@@ -163,8 +163,8 @@ export default function PlayPage() {
               </h2>
               <p className="font-mono text-[11px] text-text-muted mt-0.5">no ELO impact — warm up your skills</p>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              {(['EASY', 'MEDIUM', 'HARD'] as const).map((diff) => (
+            <div className="grid grid-cols-2 gap-3">
+              {(['EASY', 'MEDIUM'] as const).map((diff) => (
                 <button
                   key={diff}
                   onClick={() => startPractice(diff)}
@@ -172,13 +172,11 @@ export default function PlayPage() {
                   className={`flex flex-col items-center rounded-lg border px-3 py-3 font-mono text-xs font-medium transition-all duration-150 ${
                     diff === 'EASY'
                       ? 'border-success/30 text-success hover:bg-success/10 hover:border-success/50'
-                      : diff === 'MEDIUM'
-                      ? 'border-warning/30 text-warning hover:bg-warning/10 hover:border-warning/50'
-                      : 'border-error/30 text-error hover:bg-error/10 hover:border-error/50'
+                      : 'border-warning/30 text-warning hover:bg-warning/10 hover:border-warning/50'
                   } ${startingPractice ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  <span className="text-sm mb-1">{diff === 'EASY' ? '⚡' : diff === 'MEDIUM' ? '🔥' : '💀'}</span>
-                  <span>{diff === 'EASY' ? 'easy' : diff === 'MEDIUM' ? 'medium' : 'hard'}</span>
+                  <span className="text-sm mb-1">{diff === 'EASY' ? '⚡' : '🔥'}</span>
+                  <span>{diff === 'EASY' ? 'easy' : 'medium'}</span>
                 </button>
               ))}
             </div>

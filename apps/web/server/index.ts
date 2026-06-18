@@ -153,6 +153,11 @@ io.use((socket: AuthenticatedSocket, next) => {
 io.on('connection', (socket: AuthenticatedSocket) => {
   console.log(`[realtime] connect ${socket.id} user=${socket.userId}`);
 
+  // Join the user's personal room so emitToUser() events reach them
+  if (socket.userId) {
+    void socket.join(userRoom(socket.userId));
+  }
+
   socket.on('match:join', (matchId, ack) => {
     // Verify the user is a participant in this match
     db.match.findUnique({ where: { id: matchId }, select: { playerAId: true, playerBId: true } })

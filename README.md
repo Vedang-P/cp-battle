@@ -2,21 +2,37 @@
 
 **1v1 competitive programming duels.** Race head-to-head against another programmer — progressive-unlock problems (Easy → Medium), live timer, see your opponent's progress but never their code. Climb the ELO ladder.
 
+```
+██████████                         █████
+░█░░░░░░███                         ░░███
+░     ███░    ██████   ████████   ███████   ██████   █████
+     ███     ░░░░░███ ░░███░░███ ███░░███  ███░░███ ███░░
+    ███       ███████  ░███ ░███░███ ░███ ░███ ░███░░█████
+  ████     █ ███░░███  ░███ ░███░███ ░███ ░███ ░███ ░░░░███
+ ███████████░░████████ ░███████ ░░████████░░██████  ██████
+░░░░░░░░░░░  ░░░░░░░░  ░███░░░   ░░░░░░░░  ░░░░░░  ░░░░░░
+                       ░███
+                       █████
+                      ░░░░░
+```
+
 ## Features
 
-- **Progressive Unlock** — Solve Easy to unlock Medium
+- **Progressive Unlock** — Solve Easy problems to unlock Medium
 - **Live Timer** — 20-minute server-authoritative countdown
 - **Opponent Awareness** — See test cases passed, wrong submissions, current problem — never their code
 - **ELO Matchmaking** — Classic Elo rating system with skill-based pairing
-- **3 Languages** — C++, Python, Java (Judge0 sandbox)
-- **Real-time Battle** — Socket.IO-powered opponent progress feed (Redis adapter for horizontal scaling)
+- **3 Languages** — C++, Python, Java via Judge0 sandbox
+- **Real-time Battle** — Socket.IO-powered opponent progress feed with Redis adapter for horizontal scaling
 - **Code Editor** — In-browser Monaco editor with syntax highlighting
-- **400+ Real Problems** — Sourced from CSES problem archive
+- **400+ Real Problems** — Sourced from CSES Problem Set
 - **ELO Rank Tiers** — Bronze → Silver → Gold → Platinum → Diamond → Master → Grandmaster
-- **Win Streaks** — Track your hot streaks with visual indicators
+- **Win Streaks** — Track hot streaks with visual indicators
+- **Practice Mode** — Play against AI bot with Easy/Medium difficulty
+- **Google OAuth** — Sign in with Google or email/password
+- **Anonymous Feedback** — Built-in feedback system
 - **Interactive Terminal Landing** — Type commands, explore the platform
 - **Music Player** — Playlist with loop-all, mute toggle, persisted preferences
-- **Practice Mode** — Play against AI bot with adjustable difficulty
 
 ## Architecture
 
@@ -24,14 +40,14 @@
 Browser ──HTTPS/WSS──> Nginx ──► Next.js (:3000)
                                 └─REST──> PostgreSQL
                                 └─REST──> Redis (queue, limits, adapter)
-                                └─enqueue──> judge-worker ──► Judge0 (:2358)
+                                └─enqueue──> matchmaker ──► createMatch
                                 └─Redis pub/sub──> Socket.IO (any instance)
 
 Next.js (:3000) ──REST──> Judge0 (:2358) ──> isolate sandbox
 
 Workers (separate processes):
   - realtime   (Socket.IO server on :3002, Redis adapter)
-  - matchmaker (Redis SET NX locked, recursive setTimeout)
+  - matchmaker (Redis sorted set, HMAC-signed emit bridge)
   - finalizer  (SELECT FOR UPDATE, idempotent, emits match:end)
   - bot        (practice AI, recursive setTimeout, graceful shutdown)
 ```
@@ -40,8 +56,8 @@ Workers (separate processes):
 
 | Path | Package | Purpose |
 |------|---------|---------|
-| `apps/web` | `web` | Next.js app (frontend + REST API) + standalone Socket.IO server + workers |
-| `packages/db` | `@zapdos/db` | Prisma schema, client singleton, seeds |
+| `apps/web` | `web` | Next.js app (frontend + REST API) + Socket.IO server + workers |
+| `packages/db` | `@zapdos/db` | Prisma schema, client singleton, migrations |
 | `packages/elo` | `@zapdos/elo` | Pure Elo rating math |
 | `packages/realtime` | `@zapdos/realtime` | Shared Socket.IO event contracts |
 | `packages/judge` | `@zapdos/judge` | Judge0 client, token-based output compare, verdict logic |
@@ -59,7 +75,7 @@ Workers (separate processes):
 
 ```bash
 # 1. Clone and install
-git clone <repo-url>
+git clone https://github.com/Vedang-P/cp-battle.git
 cd zapdos
 pnpm install
 
@@ -74,9 +90,8 @@ pnpm infra:up
 # 4. Apply DB schema + seed problems
 pnpm db:generate
 pnpm db:push
-pnpm db:seed
 
-# 5. (Optional) Scrape 400+ real problems from CSES
+# 5. Scrape 400+ real problems from CSES
 pnpm scrape-problems -- --cses
 
 # 6. Start all services (each in a separate terminal, or use start-dev.sh)
@@ -102,7 +117,7 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 
 | Rule | Value |
 |------|-------|
-| **Format** | Progressive unlock — Easy → Medium (HARD reserved) |
+| **Format** | Progressive unlock — Easy → Medium |
 | **Clock** | 20 minutes (server-authoritative) |
 | **Scoring** | Easy 100 / Medium 200 points |
 | **Penalty** | -10 points per wrong submission (floor 0) |
@@ -121,18 +136,17 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 
 ## Problem Corpus
 
-Zapdos uses **real problems** sourced from competitive programming platforms — not generated.
+Zapdos uses **real problems** sourced from the CSES Problem Set — not generated.
 
 | Source | Count | How to add |
 |--------|-------|------------|
-| Hand-authored seed | 9 | `pnpm db:seed` |
 | CSES Problem Set | 394 | `pnpm scrape-problems -- --cses` |
-| **Total** | **403+** | |
+| **Total** | **394+** | |
 
-### Scraping more problems
+### Scraping problems
 
 ```bash
-pnpm scrape-problems -- --cses      # CSES (400 problems)
+pnpm scrape-problems -- --cses      # CSES (394 problems)
 pnpm scrape-problems -- --atcoder   # AtCoder ABC (1000+ problems)
 pnpm scrape-problems                # all sources
 ```
@@ -161,66 +175,64 @@ The music player loops through all tracks and back to the start. Users can mute/
 
 ---
 
-## Deployment
+## Production Deployment
 
-### Option 1: Single EC2 + Judge0 on separate EC2 (Recommended)
+### Current Setup: Two GCP VMs
 
-1. **Provision two EC2 instances** in the same VPC:
-   - Web instance (t3.large, 8GB): runs Next.js + all workers via PM2
-   - Judge0 instance (t3.medium, 4GB): runs Judge0 CE in Docker
+| VM | Machine Type | IP | Purpose |
+|----|-------------|-----|---------|
+| `cpb-web` | e2-medium | 35.232.246.89 (static) | Next.js + all workers + Postgres + Redis + Nginx |
+| `cpb-judge0` | e2-standard-2 | 10.128.0.3 (internal) | Judge0 CE (3 workers, privileged mode) |
 
-2. **Set up managed services:**
-   - RDS Postgres 16 (or Neon/Supabase free tier)
-   - ElastiCache Redis (or Upstash free tier)
+### Architecture
 
-3. **On the web instance:**
-   ```bash
-   git clone <repo-url> && cd zapdos
-   cp .env.example .env
-   # Edit .env with production values (DATABASE_URL, REDIS_URL, JUDGE0_URL, secrets)
-   pnpm install
-   pnpm db:generate
-   pnpm db:migrate:deploy
-   pnpm db:seed
-   pnpm scrape-problems -- --cses
-   pnpm build
+All app services run in Docker containers on the web VM:
 
-   # Start all processes with PM2
-   pm2 start ecosystem.config.cjs --env production
-   pm2 save
-   pm2 startup
-   ```
+```
+┌─ cpb-web (e2-medium, 2 vCPU, 4GB) ─────────────────────┐
+│                                                          │
+│  Nginx (:80) ──► Next.js (:3000)                        │
+│              ──► Socket.IO (:3002)                       │
+│                                                          │
+│  ┌─ Docker Compose Stack ──────────────────────────────┐ │
+│  │ postgres  redis  web  realtime  matchmaker  ...     │ │
+│  └─────────────────────────────────────────────────────┘ │
+│                                                          │
+│  Judge0 runs on a separate VM (needs privileged mode)    │
+└──────────────────────────────────────────────────────────┘
 
-4. **Set up Nginx** for HTTPS + WebSocket upgrade:
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name your-domain.com;
+┌─ cpb-judge0 (e2-standard-2, 2 vCPU, 8GB) ──────────────┐
+│  judge0-server (:2358)                                   │
+│  judge0-worker ×3                                        │
+│  judge0-db (Postgres)                                    │
+│  judge0-redis                                            │
+└──────────────────────────────────────────────────────────┘
+```
 
-       location / {
-           proxy_pass http://localhost:3000;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_cache_bypass $http_upgrade;
-       }
+### Deploying Changes
 
-       location /socket.io/ {
-           proxy_pass http://localhost:3002;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-       }
-   }
-   ```
+```bash
+# From local machine
+git push origin master
 
-5. **On the Judge0 instance:**
-   ```bash
-   # Install Docker, then:
-   docker compose up -d judge0-server judge0-worker judge0-db judge0-redis
-   ```
+# SSH into web VM
+gcloud compute ssh cpb-web --zone=us-central1-a
+
+# Pull changes, rebuild, restart
+cd /home/vedang/cp-battle
+git pull
+sudo docker build -t zapdos-web:latest .
+sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml up -d
+```
+
+### Database Migrations
+
+```bash
+# On the web VM
+cd /home/vedang/cp-battle
+sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml \
+  exec -T web npx prisma migrate deploy
+```
 
 ### Environment Variables
 
@@ -240,6 +252,8 @@ The music player loops through all tracks and back to the start. Users can mute/
 | `REALTIME_CORS_ORIGIN` | No | `http://localhost:3000` | CORS origin for Socket.IO |
 | `REALTIME_URL` | No | `http://localhost:3002` | Internal URL for /emit bridge |
 | `NEXT_PUBLIC_REALTIME_URL` | No | `http://localhost:3002` | Public URL for browser Socket.IO |
+| `GOOGLE_CLIENT_ID` | No | — | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth client secret |
 
 ---
 
@@ -249,7 +263,7 @@ The music player loops through all tracks and back to the start. Users can mute/
 |--------|------|-------------|
 | GET | `/api/health` | Health check (Postgres, Redis, Judge0) |
 | POST | `/api/auth/signup` | Create account |
-| GET/POST | `/api/auth/[...nextauth]` | NextAuth handlers |
+| GET/POST | `/api/auth/[...nextauth]` | NextAuth handlers (credentials + Google OAuth) |
 | GET | `/api/auth/socket-token` | Get JWT for Socket.IO auth |
 | GET | `/api/user/profile` | Current user profile |
 | GET | `/api/leaderboard` | Top 100 players by ELO |
@@ -263,6 +277,8 @@ The music player loops through all tracks and back to the start. Users can mute/
 | POST | `/api/match/[matchId]/forfeit` | Forfeit match |
 | GET | `/api/match/[matchId]/result` | Match result |
 | GET | `/api/match/history` | User's match history |
+| POST | `/api/feedback` | Submit anonymous feedback |
+| GET | `/api/feedback` | Read feedback (admin in future) |
 
 ---
 
@@ -279,12 +295,33 @@ The music player loops through all tracks and back to the start. Users can mute/
 | `pnpm start` | Start production server |
 | `pnpm db:push` | Sync schema to DB (dev) |
 | `pnpm db:migrate:deploy` | Apply migrations (production) |
-| `pnpm db:seed` | Seed initial 9 problems |
+| `pnpm db:seed` | Seed initial problems (now a no-op, use scraper) |
 | `pnpm scrape-problems` | Scrape real problems from CSES/AtCoder |
 | `pnpm infra:up` | Start Docker services |
 | `pnpm infra:down` | Stop Docker services |
 | `pnpm typecheck` | Typecheck all workspaces |
 | `pnpm lint` | Lint all workspaces |
+
+---
+
+## Testing
+
+### E2E Match Test
+
+```bash
+# Requires running dev server + seeded DB with test users
+BASE_URL=http://localhost:3000 pnpm tsx scripts/e2e-match.js
+```
+
+### Stress Test
+
+```bash
+# Run with default 100 virtual users
+BASE_URL=http://localhost:3000 pnpm tsx scripts/stress-test.ts
+
+# Custom user count
+USERS=50 DURATION=60 pnpm tsx scripts/stress-test.ts
+```
 
 ---
 
@@ -298,6 +335,8 @@ The music player loops through all tracks and back to the start. Users can mute/
 - **Sanitized opponent data** — compile/runtime errors never sent to the opponent
 - **Judge0 sandbox** — `enable_network: false`, per-process time/memory limits
 - **bcrypt password hashing** — cost factor 12
+- **Disposable email blocklist** — 200+ domains blocked at signup
+- **Input validation** — Zod schemas on all API inputs
 
 ---
 

@@ -24,8 +24,8 @@ services:
     container_name: zapdos-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: cpb
-      POSTGRES_PASSWORD: cpb_local
+      POSTGRES_USER: zapdos
+      POSTGRES_PASSWORD: zapdos_local
       POSTGRES_DB: zapdos
     ports:
       - "5432:5432"
@@ -37,7 +37,7 @@ services:
           cpus: "1"
           memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cpb -d zapdos"]
+      test: ["CMD-SHELL", "pg_isready -U zapdos -d zapdos"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -46,7 +46,7 @@ services:
     image: redis:7-alpine
     container_name: zapdos-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "cpb_redis_pass"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "zapdos_redis_pass"]
     ports:
       - "6379:6379"
     volumes:
@@ -57,7 +57,7 @@ services:
           cpus: "0.5"
           memory: 512M
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "cpb_redis_pass", "ping"]
+      test: ["CMD", "redis-cli", "-a", "zapdos_redis_pass", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -116,7 +116,7 @@ services:
       REDIS_PORT: 6379
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod
+      SECRET_KEY_BASE: zapdos-judge0-secret-key-base-change-in-prod
       ENABLE_CGROUP: "false"
     deploy:
       resources:
@@ -150,7 +150,7 @@ services:
       REDIS_PORT: 6379
       RAILS_ENV: production
       RAILS_LOG_TO_STDOUT: "true"
-      SECRET_KEY_BASE: cpb-judge0-secret-key-base-change-in-prod
+      SECRET_KEY_BASE: zapdos-judge0-secret-key-base-change-in-prod
       ENABLE_CGROUP: "false"
     deploy:
       resources:

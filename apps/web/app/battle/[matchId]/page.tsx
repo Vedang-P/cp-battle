@@ -181,20 +181,21 @@ export default function BattlePage({ params }: Props) {
       // Fetch the authoritative result
       fetch(`/api/match/${matchId}/result`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data) {
+        .then((resp) => {
+          if (resp?.match) {
+            const m = resp.match;
             const isPlayerA = matchMeta.playerAId === userId;
             setMatchEnd({
               matchId,
               status: 'COMPLETED',
-              winnerId: data.winnerId ?? null,
-              scoreA: data.scoreA ?? 0,
-              scoreB: data.scoreB ?? 0,
-              eloDeltaA: data.eloDeltaA ?? 0,
-              eloDeltaB: data.eloDeltaB ?? 0,
+              winnerId: m.winnerId ?? null,
+              scoreA: m.scoreA ?? 0,
+              scoreB: m.scoreB ?? 0,
+              eloDeltaA: m.eloDeltaA ?? 0,
+              eloDeltaB: m.eloDeltaB ?? 0,
               reason: 'time',
             });
-            setEloDelta(isPlayerA ? (data.eloDeltaA ?? 0) : (data.eloDeltaB ?? 0));
+            setEloDelta(isPlayerA ? (m.eloDeltaA ?? 0) : (m.eloDeltaB ?? 0));
           }
         })
         .catch(() => {});

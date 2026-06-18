@@ -186,6 +186,10 @@ export async function POST(
       });
     }
 
+    if (!result) {
+      return NextResponse.json({ error: 'Judge returned no result' }, { status: 500 });
+    }
+
     // Update submission and progress atomically after judging
     const postJudgeResult = await db.$transaction(async (tx) => {
       await tx.submission.update({

@@ -25,7 +25,8 @@ export async function POST(req: Request) {
     let userId: string | null = null;
     try {
       const { getServerSession } = await import('next-auth');
-      const session = await getServerSession();
+      const { authOptions } = await import('@/lib/auth');
+      const session = await getServerSession(authOptions);
       if (session?.user?.id) {
         userId = session.user.id;
       }
