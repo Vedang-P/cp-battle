@@ -27,10 +27,14 @@
     "db:seed": "pnpm --filter @cp-battle/db seed",
     "db:studio": "pnpm --filter @cp-battle/db studio",
     "db:migrate:deploy": "pnpm --filter @cp-battle/db migrate:deploy",
+    "scrape-problems": "pnpm --filter web scrape-problems",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   },
   "devDependencies": {
     "typescript": "5.4.5"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0"
   }
 }

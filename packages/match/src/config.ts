@@ -43,23 +43,24 @@ export const MATCH_CONFIG: MatchConfig = {
   defaultMode: 'SPRINT',
   modes: {
     SPRINT: {
+      // EASY + MEDIUM only — HARD problems are reserved for future use.
       composition: [
         { count: 2, difficulty: 'EASY' },
         { count: 1, difficulty: 'MEDIUM' },
       ],
       totalProblems: 3,
       durationSeconds: num(process.env.MATCH_DURATION_SECONDS, 1200),
-      points: { EASY: 100, MEDIUM: 250, HARD: 400 },
+      points: { EASY: 100, MEDIUM: 200, HARD: 350 },
     },
     PROGRESSIVE: {
+      // EASY + MEDIUM only — HARD problems are reserved for future use.
       composition: [
-        { count: 3, difficulty: 'EASY' },
-        { count: 3, difficulty: 'MEDIUM' },
-        { count: 2, difficulty: 'HARD' },
+        { count: 4, difficulty: 'EASY' },
+        { count: 4, difficulty: 'MEDIUM' },
       ],
       totalProblems: 8,
       durationSeconds: num(process.env.MATCH_DURATION_SECONDS, 1200),
-      points: { EASY: 100, MEDIUM: 250, HARD: 400 },
+      points: { EASY: 100, MEDIUM: 200, HARD: 350 },
     },
   },
   wrongSubmissionPenalty: num(process.env.WRONG_SUBMISSION_PENALTY, 10),

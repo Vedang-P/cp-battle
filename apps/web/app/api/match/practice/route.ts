@@ -5,6 +5,7 @@ import { createMatch } from '@cp-battle/match';
 import { emitToUser } from '@/lib/socket';
 import { BOT_EMAIL } from '@/lib/bot-config';
 import type { MatchStartPayload } from '@cp-battle/realtime';
+import type { Difficulty } from '@cp-battle/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,11 +13,11 @@ export async function POST(req: Request) {
   try {
     const user = await requireUser();
 
-    // Parse difficulty from body
+    // Parse difficulty from body — only EASY and MEDIUM allowed (HARD is reserved)
     let difficulty = 'MEDIUM';
     try {
       const body = await req.json();
-      if (body.difficulty === 'EASY' || body.difficulty === 'MEDIUM' || body.difficulty === 'HARD') {
+      if (body.difficulty === 'EASY' || body.difficulty === 'MEDIUM') {
         difficulty = body.difficulty;
       }
     } catch {
@@ -50,8 +51,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // Create match with bot as playerB
-    const matchId = await createMatch(user.id, bot.id, 'SPRINT');
+    // Create match with bot as playerB — pass difficulty for problem selection
+    const diffEnum = difficulty as Difficulty;
+    const matchId = await createMatch(user.id, bot.id, 'SPRINT', diffEnum);
 
     // Mark as practice match
     await db.match.update({

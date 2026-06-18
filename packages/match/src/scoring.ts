@@ -14,7 +14,7 @@
  */
 
 import type { Difficulty } from '@cp-battle/db';
-import { MATCH_CONFIG, type MatchModeType, modeConfig } from './config';
+import { MATCH_CONFIG, type MatchModeType } from './config';
 
 export interface ProblemScoreInput {
   difficulty: Difficulty;
@@ -22,14 +22,14 @@ export interface ProblemScoreInput {
   wrongSubmissions: number;
   /** When the player solved it (ms epoch), if solved. Used only for tiebreak. */
   solvedAtMs: number | null;
+  /** Points the problem is worth (from the Problem.points column). */
+  points: number;
 }
 
 /** Score for a single problem in the match. */
 export function problemScore(input: ProblemScoreInput): number {
   if (input.status !== 'SOLVED') return 0;
-  const cfg = modeConfig('SPRINT'); // points are the same across modes
-  const base = cfg.points[input.difficulty];
-  return Math.max(0, base - input.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty);
+  return Math.max(0, input.points - input.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty);
 }
 
 export interface PlayerTally {

@@ -16,7 +16,8 @@
     "start:finalizer": "tsx --env-file=../../.env server/finalizer.ts",
     "start:bot": "tsx --env-file=../../.env server/bot-worker.ts",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "scrape-problems": "tsx --env-file=../../.env scripts/scrape-problems.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.0.0",
@@ -29,6 +30,7 @@
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "2.4.3",
     "bullmq": "5.7.0",
+    "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "ioredis": "5.4.1",

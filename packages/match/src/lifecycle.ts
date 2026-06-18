@@ -114,14 +114,70 @@ export async function pickProblemsForMatch(
   return result;
 }
 
+/**
+ * Pick 3 problems of a specific difficulty for practice mode.
+ * Avoids ids either player has seen recently.
+ */
+async function pickPracticeProblems(
+  playerAId: string,
+  playerBId: string,
+  difficulty: Difficulty,
+): Promise<string[]> {
+  const recent = await db.match.findMany({
+    where: {
+      OR: [
+        { playerAId: { in: [playerAId, playerBId] } },
+        { playerBId: { in: [playerAId, playerBId] } },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: { problemSequence: true },
+  });
+  const seen = new Set<string>();
+  for (const m of recent) {
+    for (const id of m.problemSequence) seen.add(id);
+  }
+
+  const used = new Set(seen);
+  const matchUsed = new Set<string>();
+  const sequence: string[] = [];
+
+  for (let i = 0; i < 3; i++) {
+    const candidate = await db.problem.findFirst({
+      where: { difficulty, isVisible: true, id: { notIn: [...used] } },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (candidate) {
+      used.add(candidate.id);
+      matchUsed.add(candidate.id);
+      sequence.push(candidate.id);
+    } else {
+      // Fallback: ignore "seen" if pool exhausted
+      const fallback = await db.problem.findFirst({
+        where: { difficulty, isVisible: true, id: { notIn: [...matchUsed] } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!fallback) throw new Error(`No visible ${difficulty} problem available`);
+      matchUsed.add(fallback.id);
+      sequence.push(fallback.id);
+    }
+  }
+
+  return shuffle(sequence);
+}
+
 /** Create an in-progress match between two players. */
 export async function createMatch(
   playerAId: string,
   playerBId: string,
   mode: MatchModeType = 'SPRINT',
+  practiceDifficulty?: Difficulty,
 ): Promise<string> {
   const cfg = modeConfig(mode);
-  const problemSequence = await pickProblemsForMatch(playerAId, playerBId, mode);
+  const problemSequence = practiceDifficulty
+    ? await pickPracticeProblems(playerAId, playerBId, practiceDifficulty)
+    : await pickProblemsForMatch(playerAId, playerBId, mode);
   const now = new Date();
   const ends = new Date(now.getTime() + cfg.durationSeconds * 1000);
 
@@ -245,9 +301,9 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
     const problemIds = matchRow.problemSequence;
     const problems = await tx.problem.findMany({
       where: { id: { in: problemIds } },
-      select: { id: true, difficulty: true },
+      select: { id: true, difficulty: true, points: true },
     });
-    const difficultyMap = new Map(problems.map((p) => [p.id, p.difficulty]));
+    const difficultyMap = new Map(problems.map((p) => [p.id, p]));
 
     // Fetch progress rows for both players
     const allProgress = await tx.matchProgress.findMany({
@@ -258,12 +314,16 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       const rows = allProgress.filter((p) => p.userId === userId);
       return rows
         .sort((a, b) => a.problemOrder - b.problemOrder)
-        .map((row) => ({
-          difficulty: (difficultyMap.get(row.problemId) ?? 'EASY') as Difficulty,
-          status: row.status,
-          wrongSubmissions: row.wrongSubmissions,
-          solvedAtMs: row.solvedAt ? row.solvedAt.getTime() : null,
-        }));
+        .map((row) => {
+          const prob = difficultyMap.get(row.problemId);
+          return {
+            difficulty: (prob?.difficulty ?? 'EASY') as Difficulty,
+            status: row.status,
+            wrongSubmissions: row.wrongSubmissions,
+            solvedAtMs: row.solvedAt ? row.solvedAt.getTime() : null,
+            points: prob?.points ?? 100,
+          };
+        });
     };
 
     // Write per-problem scoreEarned for both players.
