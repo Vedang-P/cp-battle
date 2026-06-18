@@ -46,5 +46,5 @@ COPY --from=builder /app ./
 
 EXPOSE 3000 3002
 
-# Default: Next.js production server.
-CMD ["pnpm", "--filter", "web", "start"]
+# Default: Next.js standalone production server.
+CMD ["node", "apps/web/.next/standalone/apps/web/server.js"]

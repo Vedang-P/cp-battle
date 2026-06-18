@@ -52,7 +52,7 @@ services:
   realtime:
     image: cpb-web:latest
     restart: unless-stopped
-    command: ["./node_modules/.bin/tsx", "apps/web/server/index.ts"]
+    command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/index.ts"]
     env_file: ../.env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
@@ -66,7 +66,7 @@ services:
   matchmaker:
     image: cpb-web:latest
     restart: unless-stopped
-    command: ["./node_modules/.bin/tsx", "apps/web/server/matchmaker.ts"]
+    command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/matchmaker.ts"]
     env_file: ../.env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
@@ -79,7 +79,7 @@ services:
   finalizer:
     image: cpb-web:latest
     restart: unless-stopped
-    command: ["./node_modules/.bin/tsx", "apps/web/server/finalizer.ts"]
+    command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/finalizer.ts"]
     env_file: ../.env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
@@ -92,7 +92,7 @@ services:
   bot:
     image: cpb-web:latest
     restart: unless-stopped
-    command: ["./node_modules/.bin/tsx", "apps/web/server/bot-worker.ts"]
+    command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/bot-worker.ts"]
     env_file: ../.env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
