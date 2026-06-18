@@ -10,6 +10,7 @@ import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { TerminalWindow } from '@/components/TerminalWindow';
 import { GlowText } from '@/components/GlowText';
+import { getRankTier, getNextTier } from '@/lib/rank-tiers';
 
 interface UserProfile {
   id: string;
@@ -75,6 +76,22 @@ export default function DashboardPage() {
     ? ((profile.wins / profile.gamesPlayed) * 100).toFixed(0)
     : '0';
 
+  // Calculate current win streak from history (most recent first)
+  let recentWins = 0;
+  if (history.length > 0) {
+    const sorted = [...history].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    for (const m of sorted) {
+      if (m.winner?.id === profile.id) recentWins++;
+      else break;
+    }
+  }
+
+  const tier = getRankTier(profile.elo);
+  const nextTier = getNextTier(profile.elo);
+  const eloToNext = nextTier ? nextTier.minElo - profile.elo : 0;
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-10 animate-fade-in">
       {/* Profile header */}
@@ -85,10 +102,28 @@ export default function DashboardPage() {
               <GlowText color="green">{profile.username}</GlowText>
             </h1>
             <p className="mt-0.5 font-mono text-xs text-text-muted">{profile.email}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <span
+                className="font-mono text-xs px-2 py-0.5 rounded border"
+                style={{ color: tier.color, borderColor: `${tier.color}40`, backgroundColor: `${tier.color}10` }}
+              >
+                {tier.name}
+              </span>
+              {recentWins >= 3 && (
+                <span className="font-mono text-xs text-warning glow-amber">
+                  {recentWins}x streak
+                </span>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <div className="font-mono text-3xl font-semibold text-brand tabular-nums glow-green">{profile.elo}</div>
             <div className="font-mono text-xs text-text-muted">ELO</div>
+            {nextTier && (
+              <div className="mt-1 font-mono text-[10px] text-text-muted/60">
+                {eloToNext} to {nextTier.name}
+              </div>
+            )}
           </div>
         </div>
       </div>

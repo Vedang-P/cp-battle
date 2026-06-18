@@ -11,7 +11,6 @@ COPY packages/elo/package.json ./packages/elo/
 COPY packages/judge/package.json ./packages/judge/
 COPY packages/match/package.json ./packages/match/
 COPY packages/realtime/package.json ./packages/realtime/
-COPY packages/ui/package.json ./packages/ui/
 RUN pnpm install --frozen-lockfile
 
 # --- Build ---
@@ -24,7 +23,6 @@ COPY --from=deps /app/packages/elo/node_modules ./packages/elo/node_modules
 COPY --from=deps /app/packages/judge/node_modules ./packages/judge/node_modules
 COPY --from=deps /app/packages/match/node_modules ./packages/match/node_modules
 COPY --from=deps /app/packages/realtime/node_modules ./packages/realtime/node_modules
-COPY --from=deps /app/packages/ui/node_modules ./packages/ui/node_modules
 COPY . .
 RUN pnpm db:generate
 RUN pnpm build
@@ -36,15 +34,20 @@ ENV NODE_ENV=production
 
 RUN corepack enable && corepack prepare pnpm@9.7.1 --activate
 
+# Copy the standalone Next.js output
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
-COPY --from=builder /app/apps/web/prisma ./apps/web/prisma
+# Copy Prisma schema + migrations for deploy
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Copy tsx for running the standalone worker processes
+COPY --from=builder /app/node_modules/.pnpm/tsx@4.9.3/node_modules/tsx ./node_modules/tsx
+COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
+COPY --from=builder /app/packages ./packages
 
-EXPOSE 3000
-EXPOSE 3002
+EXPOSE 3000 3002
 
-CMD ["node", "apps/web/server/index.js"]
+# Start all processes via PM2 (installed in ecosystem.config.js)
+CMD ["node", "apps/web/server.js"]

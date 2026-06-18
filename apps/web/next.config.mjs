@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   // Transpile workspace packages so Next handles their TS source directly.
   transpilePackages: [
     '@cp-battle/db',
