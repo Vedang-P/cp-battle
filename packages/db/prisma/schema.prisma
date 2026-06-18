@@ -169,6 +169,10 @@ model Match {
   eloDeltaB       Int         @default(0)
   endReason       String?
 
+  // Practice mode: play against AI bot (no ELO impact)
+  isPractice         Boolean  @default(false)
+  practiceDifficulty String?  // 'EASY' | 'MEDIUM' | 'HARD'
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

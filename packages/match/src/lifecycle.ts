@@ -206,6 +206,7 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
         startsAt: Date | null;
         endsAt: Date | null;
         problemSequence: string[];
+        isPractice: boolean;
       }>
     >`SELECT * FROM "Match" WHERE "id" = ${input.matchId} FOR UPDATE`;
 
@@ -296,16 +297,55 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
           ? matchRow.playerBId
           : null;
 
-    // ELO
-    const resultFromA: GameResult =
-      outcome === 'A_WINS' ? 'win' : outcome === 'B_WINS' ? 'loss' : 'draw';
-    const elo = updateRatings(
-      resultFromA,
-      playerA?.elo ?? 1200,
-      playerB?.elo ?? 1200,
-      playerA?.gamesPlayed ?? 0,
-      playerB?.gamesPlayed ?? 0,
-    );
+    // ELO — skip for practice matches (no rating impact)
+    let eloDeltaA = 0;
+    let eloDeltaB = 0;
+
+    if (!matchRow.isPractice) {
+      const resultFromA: GameResult =
+        outcome === 'A_WINS' ? 'win' : outcome === 'B_WINS' ? 'loss' : 'draw';
+      const elo = updateRatings(
+        resultFromA,
+        playerA?.elo ?? 1200,
+        playerB?.elo ?? 1200,
+        playerA?.gamesPlayed ?? 0,
+        playerB?.gamesPlayed ?? 0,
+      );
+
+      eloDeltaA = elo.deltaA;
+      eloDeltaB = elo.deltaB;
+
+      const applyUserRecord = async (
+        userId: string,
+        newElo: number,
+        won: boolean | null,
+        gamesBefore: number,
+      ) => {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            elo: newElo,
+            gamesPlayed: gamesBefore + 1,
+            wins: { increment: won === true ? 1 : 0 },
+            losses: { increment: won === false ? 1 : 0 },
+            draws: { increment: won === null ? 1 : 0 },
+          },
+        });
+      };
+
+      await applyUserRecord(
+        matchRow.playerAId,
+        elo.ratingA,
+        outcome === 'DRAW' ? null : outcome === 'A_WINS',
+        playerA?.gamesPlayed ?? 0,
+      );
+      await applyUserRecord(
+        matchRow.playerBId,
+        elo.ratingB,
+        outcome === 'DRAW' ? null : outcome === 'B_WINS',
+        playerB?.gamesPlayed ?? 0,
+      );
+    }
 
     await tx.match.update({
       where: { id: matchRow.id },
@@ -315,42 +355,11 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
         winnerId,
         scoreA: tallyA.totalScore,
         scoreB: tallyB.totalScore,
-        eloDeltaA: elo.deltaA,
-        eloDeltaB: elo.deltaB,
+        eloDeltaA,
+        eloDeltaB,
         endReason: input.reason,
       },
     });
-
-    const applyUserRecord = async (
-      userId: string,
-      newElo: number,
-      won: boolean | null,
-      gamesBefore: number,
-    ) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          elo: newElo,
-          gamesPlayed: gamesBefore + 1,
-          wins: { increment: won === true ? 1 : 0 },
-          losses: { increment: won === false ? 1 : 0 },
-          draws: { increment: won === null ? 1 : 0 },
-        },
-      });
-    };
-
-    await applyUserRecord(
-      matchRow.playerAId,
-      elo.ratingA,
-      outcome === 'DRAW' ? null : outcome === 'A_WINS',
-      playerA?.gamesPlayed ?? 0,
-    );
-    await applyUserRecord(
-      matchRow.playerBId,
-      elo.ratingB,
-      outcome === 'DRAW' ? null : outcome === 'B_WINS',
-      playerB?.gamesPlayed ?? 0,
-    );
 
     return {
       matchId: matchRow.id,
@@ -358,8 +367,8 @@ export async function finalizeMatch(input: FinalizeInput): Promise<FinalizeResul
       outcome,
       scoreA: tallyA.totalScore,
       scoreB: tallyB.totalScore,
-      eloDeltaA: elo.deltaA,
-      eloDeltaB: elo.deltaB,
+      eloDeltaA,
+      eloDeltaB,
     };
   });
 }

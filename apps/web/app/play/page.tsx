@@ -14,6 +14,7 @@ export default function PlayPage() {
   const [queueStatus, setQueueStatus] = useState<QueueStatus>('idle');
   const [queueTime, setQueueTime] = useState(0);
   const [error, setError] = useState('');
+  const [startingPractice, setStartingPractice] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -81,9 +82,34 @@ export default function PlayPage() {
     setQueueTime(0);
   }, []);
 
+  const startPractice = useCallback(async (difficulty: 'EASY' | 'MEDIUM' | 'HARD') => {
+    setError('');
+    setStartingPractice(true);
+    resumeAudio();
+    try {
+      const res = await fetch('/api/match/practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ difficulty }),
+      });
+      const data = await res.json();
+      if (res.ok && data.matchId) {
+        playMatchFound();
+        router.push(`/battle/${data.matchId}`);
+      } else {
+        setError(data.error || 'Failed to start practice');
+      }
+    } catch {
+      setError('Failed to start practice');
+    } finally {
+      setStartingPractice(false);
+    }
+  }, [router]);
+
   return (
     <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
-      <div className="w-full max-w-sm animate-fade-in">
+      <div className="w-full max-w-sm animate-fade-in space-y-4">
+        {/* Ranked Matchmaking */}
         <div className="card p-6 text-center">
           <h1 className="mb-1 text-base font-semibold text-text-primary tracking-tight">Find a match</h1>
           <p className="mb-5 text-xs text-text-muted">
@@ -111,6 +137,34 @@ export default function PlayPage() {
             </div>
           )}
         </div>
+
+        {/* Practice vs AI */}
+        {queueStatus === 'idle' && (
+          <div className="card p-6">
+            <div className="text-center mb-4">
+              <h2 className="text-sm font-medium text-text-primary tracking-tight">Practice vs AI</h2>
+              <p className="text-[11px] text-text-muted mt-0.5">No ELO impact — warm up your skills</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(['EASY', 'MEDIUM', 'HARD'] as const).map((diff) => (
+                <button
+                  key={diff}
+                  onClick={() => startPractice(diff)}
+                  disabled={startingPractice}
+                  className={`rounded-lg border px-3 py-2.5 text-xs font-medium transition-all duration-150 ${
+                    diff === 'EASY'
+                      ? 'border-success/20 text-success hover:bg-success/10'
+                      : diff === 'MEDIUM'
+                      ? 'border-warning/20 text-warning hover:bg-warning/10'
+                      : 'border-error/20 text-error hover:bg-error/10'
+                  } ${startingPractice ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {diff === 'EASY' ? 'Easy' : diff === 'MEDIUM' ? 'Medium' : 'Hard'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

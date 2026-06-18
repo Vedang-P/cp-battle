@@ -72,6 +72,8 @@ export default function BattlePage() {
   const [eloDelta, setEloDelta] = useState(0);
   const [eloAnimating, setEloAnimating] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [isPractice, setIsPractice] = useState(false);
+  const [practiceDifficulty, setPracticeDifficulty] = useState('');
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -114,6 +116,8 @@ export default function BattlePage() {
         setSolvedCount(data.solvedCount || { player: 0, opponent: 0 });
         setTotalProblems(data.totalProblems || 3);
         if (data.opponent?.username) setOpponentName(data.opponent.username);
+        if (data.isPractice) setIsPractice(true);
+        if (data.practiceDifficulty) setPracticeDifficulty(data.practiceDifficulty);
       })
       .catch(() => {});
   }, [matchId]);
@@ -392,15 +396,27 @@ export default function BattlePage() {
               </div>
             </div>
 
-            {/* Animated ELO delta */}
-            <div className="mt-6">
-              <div className="text-xs text-text-muted mb-1">ELO Change</div>
-              <div className={`text-4xl font-semibold tabular-nums ${
-                eloDelta > 0 ? 'text-success' : eloDelta < 0 ? 'text-error' : 'text-text-muted'
-              }`} style={{ letterSpacing: '-0.03em' }}>
-                {eloDelta > 0 ? '+' : ''}{displayElo}
+            {/* Animated ELO delta — hidden in practice mode */}
+            {isPractice ? (
+              <div className="mt-6">
+                <div className="text-xs text-text-muted mb-1">Practice</div>
+                <div className="text-lg font-medium text-text-secondary">
+                  No ELO change
+                </div>
+                <div className="text-[11px] text-text-muted mt-1">
+                  {practiceDifficulty} difficulty
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-6">
+                <div className="text-xs text-text-muted mb-1">ELO Change</div>
+                <div className={`text-4xl font-semibold tabular-nums ${
+                  eloDelta > 0 ? 'text-success' : eloDelta < 0 ? 'text-error' : 'text-text-muted'
+                }`} style={{ letterSpacing: '-0.03em' }}>
+                  {eloDelta > 0 ? '+' : ''}{displayElo}
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 flex gap-2">
               <button onClick={() => router.push('/play')} className="btn-primary flex-1 h-9 text-sm">
@@ -513,6 +529,15 @@ export default function BattlePage() {
             {timeStr}
           </span>
         </div>
+
+        {/* Practice badge */}
+        {isPractice && (
+          <div className="flex items-center border-l border-border-subtle px-3">
+            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+              Practice
+            </span>
+          </div>
+        )}
 
         {/* Forfeit */}
         <button

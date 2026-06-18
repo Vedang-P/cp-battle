@@ -80,6 +80,8 @@ export async function GET(
         opponent: opponentSolved,
       },
       totalProblems,
+      isPractice: match.isPractice,
+      practiceDifficulty: match.practiceDifficulty,
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'UNAUTHORIZED') {
