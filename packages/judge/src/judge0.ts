@@ -173,14 +173,13 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     cpu_time_limit: Math.max(1, Math.round(cpuTimeLimitMs / 1000)),
     cpu_extra_time: 1,
     wall_time_limit: Math.max(5, Math.round(cpuTimeLimitMs / 1000) + 5),
-    memory_limit: Math.min(memoryLimitMb * 1024, 512000), // Judge0 CE max is 512000 KB
+    // Use at least 512MB — g++ under Rosetta needs more virtual memory to compile.
+    memory_limit: Math.max(memoryLimitMb * 1024, 512000), // Judge0 CE max is 512000 KB
     stack_limit: 128000,
     max_file_size: 4096,
     enable_network: false,
-    // Use per-process limits (rlimit) instead of cgroup limits.
-    // This avoids the --cg flag in isolate, which requires cgroups v1
-    // and doesn't work in Docker Desktop on macOS. On real Linux (EC2)
-    // this also works fine — rlimit is a standard kernel feature.
+    // Per-process limits (avoids --cg cgroup flag which doesn't work on
+    // macOS Docker Desktop). On real Linux (EC2) this works perfectly.
     enable_per_process_and_thread_time_limit: true,
     enable_per_process_and_thread_memory_limit: true,
   };

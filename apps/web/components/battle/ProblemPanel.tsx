@@ -1,6 +1,7 @@
 'use client';
 
 import ReactMarkdown from 'react-markdown';
+import { renderMath } from '@/lib/render-math';
 
 interface Problem {
   id: string;
@@ -33,7 +34,7 @@ export function ProblemPanel({ problem }: ProblemPanelProps) {
             li: ({ children }) => <li className="ml-4">{children}</li>,
           }}
         >
-          {problem.descriptionMd}
+          {renderMath(problem.descriptionMd)}
         </ReactMarkdown>
       </div>
     </div>

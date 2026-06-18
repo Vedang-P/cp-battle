@@ -78,13 +78,14 @@ export function OutputPanel({
           </div>
         ) : verdict ? (
           <div className="space-y-1">
-            <div className={`font-medium ${verdict.verdict === 'AC' ? 'text-success glow-green' : 'text-error glow-red'}`}>
-              <span className="text-text-muted/50">$</span> {verdict.verdict} — {verdict.passed}/{verdict.total}
+            <div className={`font-medium ${verdict.verdict === 'AC' ? 'text-success glow-green' : verdict.verdict === 'ERROR' ? 'text-error glow-red' : 'text-error glow-red'}`}>
+              <span className="text-text-muted/50">$</span> {verdict.verdict}
+              {verdict.total > 0 && <span> — {verdict.passed}/{verdict.total}</span>}
             </div>
             {verdict.timeMs != null && <div className="text-text-muted">time: {verdict.timeMs}ms</div>}
             {verdict.memoryKb != null && <div className="text-text-muted">mem: {verdict.memoryKb}KB</div>}
             {verdict.error && (
-              <pre className="mt-2 whitespace-pre-wrap text-error/80">{verdict.error}</pre>
+              <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-bg-elevated p-2 text-error/80 text-[11px]">{verdict.error}</pre>
             )}
           </div>
         ) : (

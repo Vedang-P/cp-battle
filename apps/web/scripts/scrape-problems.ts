@@ -51,9 +51,9 @@ const POINTS: Record<Difficulty, number> = {
 };
 
 const DEFAULT_STARTER_CODE: Record<string, string> = {
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // TODO: implement solution\n    return 0;\n}\n`,
-  python: `# TODO: implement solution\n`,
-  java: `import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // TODO: implement solution\n    }\n}\n`,
+  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input and solve\n    return 0;\n}\n`,
+  python: `import sys\ninput = sys.stdin.readline\n\n# read input and solve\n`,
+  java: `import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        // read input and solve\n    }\n}\n`,
 };
 
 /** Live progress logger — prints with timestamp, flushes immediately. */

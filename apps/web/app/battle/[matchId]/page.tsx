@@ -23,7 +23,6 @@ import {
   playDefeat,
   playProblemSolved,
   playOpponentSolved,
-  playTick,
 } from '@/lib/sounds';
 
 type LanguageId = 'cpp' | 'python' | 'java';
@@ -41,9 +40,9 @@ interface Problem {
 }
 
 const DEFAULT_CODE: Record<LanguageId, string> = {
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    cout << "Hello World" << endl;\n    return 0;\n}\n`,
-  python: `print("Hello World")\n`,
-  java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello World");\n    }\n}\n`,
+  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input and solve\n    return 0;\n}\n`,
+  python: `import sys\ninput = sys.stdin.readline\n\n# read input and solve\n`,
+  java: `import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        // read input and solve\n    }\n}\n`,
 };
 
 interface VerdictResult {
@@ -174,17 +173,6 @@ export default function BattlePage({ params }: Props) {
     matchId,
   });
 
-  // Tick sound in the last 10 seconds (once per second change)
-  const lastTickSecRef = useRef<number>(-1);
-  useEffect(() => {
-    if (isFinished || !timeWarning) return;
-    const secs = Number(timeStr.split(':')[1]);
-    if (secs <= 10 && secs !== lastTickSecRef.current) {
-      lastTickSecRef.current = secs;
-      playTick();
-    }
-  }, [timeStr, timeWarning, isFinished]);
-
   // ── Local match:end fallback if server never sends it ─────────────────
   useEffect(() => {
     if (isFinished && !matchEnd && matchMeta) {
@@ -307,10 +295,6 @@ export default function BattlePage({ params }: Props) {
         // Re-fetch the full problem set so the newly unlocked problem appears
         fetchMatchData();
       });
-
-      socket.on('opponent:solved', () => {
-        playOpponentSolved();
-      });
     })();
 
     return () => {
@@ -351,11 +335,9 @@ export default function BattlePage({ params }: Props) {
         }),
       });
       const data = await res.json();
-      if (data.error) {
-        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
-        setIsSubmitting(false);
-      } else {
-        // Verdict may come back inline (RUN mode) or via socket
+      // Use the server's verdict if present — don't override with 'ERROR'
+      // just because data.error exists (CE verdicts include an error message).
+      if (data.verdict) {
         setVerdict({
           verdict: data.verdict,
           passed: data.passed ?? 0,
@@ -364,8 +346,10 @@ export default function BattlePage({ params }: Props) {
           timeMs: data.timeMs ?? undefined,
           memoryKb: data.memoryKb ?? undefined,
         });
-        setIsSubmitting(false);
+      } else {
+        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error ?? 'Unknown error' });
       }
+      setIsSubmitting(false);
     } catch {
       setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
       setIsSubmitting(false);
@@ -389,13 +373,24 @@ export default function BattlePage({ params }: Props) {
         }),
       });
       const data = await res.json();
-      if (data.error) {
+      if (data.verdict && !data.earlyFinish) {
+        // For SUBMIT mode, verdict usually arrives via socket. But if the
+        // server returns it inline (e.g., CE, judge error), show it immediately.
+        setVerdict({
+          verdict: data.verdict,
+          passed: data.passed ?? 0,
+          total: data.total ?? 0,
+          error: data.error,
+          timeMs: data.timeMs ?? undefined,
+          memoryKb: data.memoryKb ?? undefined,
+        });
+        setIsSubmitting(false);
+      } else if (data.error && !data.verdict) {
         setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
         setIsSubmitting(false);
       }
-      // Verdict arrives via socket (submission:verdict) for SUBMIT mode.
-      // If earlyFinish fired, the server returns the verdict inline too —
-      // the socket handler will set it, so we don't double-set here.
+      // For AC submissions, the verdict arrives via socket (submission:verdict)
+      // which will reset isSubmitting.
     } catch {
       setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
       setIsSubmitting(false);
