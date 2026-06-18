@@ -15,6 +15,7 @@ export const env = {
   get databaseUrl() { return required('DATABASE_URL'); },
   get redisUrl() { return optional('REDIS_URL', 'redis://localhost:6379'); },
   get judge0Url() { return optional('JUDGE0_URL', 'http://localhost:2358'); },
+  get judge0ApiKey() { return optional('JUDGE0_API_KEY', ''); },
   get authSecret() { return required('AUTH_SECRET'); },
   get nextauthUrl() { return optional('NEXTAUTH_URL', 'http://localhost:3000'); },
   get realtimeCorsOrigin() { return optional('REALTIME_CORS_ORIGIN', 'http://localhost:3000'); },

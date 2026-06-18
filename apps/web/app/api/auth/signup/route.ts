@@ -2,9 +2,28 @@ import { NextResponse } from 'next/server';
 import { db } from '@cp-battle/db';
 import { hashPassword } from '@/lib/password';
 import { signupSchema } from '@/lib/schemas';
+import { checkIpSignupLimit } from '@/lib/rate-limit';
+
+function getClientIp(req: Request): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown'
+  );
+}
 
 export async function POST(req: Request) {
   try {
+    // IP-based abuse prevention: 5 signups per IP per hour
+    const ip = getClientIp(req);
+    const rateLimit = await checkIpSignupLimit(ip);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: rateLimit.reason, retryAfterMs: rateLimit.retryAfterMs },
+        { status: 429 },
+      );
+    }
+
     const body = await req.json();
     const parsed = signupSchema.safeParse(body);
     if (!parsed.success) {

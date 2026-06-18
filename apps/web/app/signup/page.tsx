@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { TerminalWindow } from '@/components/TerminalWindow';
 
 export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -37,7 +37,7 @@ export default function SignUpPage() {
         if (typeof json.error === 'object') {
           setErrors(json.error);
         } else {
-          setGlobalError(json.error || 'Something went wrong');
+          setGlobalError(json.error || 'registration failed');
         }
         setLoading(false);
         return;
@@ -60,74 +60,99 @@ export default function SignUpPage() {
         window.location.href = '/signin';
       }
     } catch {
-      setGlobalError('Network error. Please try again.');
+      setGlobalError('network error. connection refused.');
       setLoading(false);
     }
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary mb-4">
-            <Zap className="h-4 w-4 text-brand" fill="currentColor" />
-            CP Battle
+            <span className="text-brand font-mono">root@cp-battle:~$</span>
           </Link>
-          <h1 className="text-lg font-semibold text-text-primary tracking-tight">Create account</h1>
-          <p className="mt-1 text-xs text-text-muted">Start competing today</p>
+          <h1 className="text-lg font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+            <span className="text-brand">useradd</span>{' '}
+            <span className="text-text-primary">new account</span>
+          </h1>
+          <p className="mt-1 font-mono text-xs text-text-muted">
+            {'>_ register to join the arena'}
+          </p>
         </div>
 
-        <div className="card p-6">
+        <TerminalWindow title="auth/register.sh">
           {globalError && (
-            <div className="mb-4 rounded-md bg-error/10 border border-error/20 px-3 py-2 text-xs text-error">
-              {globalError}
+            <div className="mb-4 rounded border border-error/30 bg-error/5 px-3 py-2 font-mono text-xs text-error glow-red">
+              <span className="text-text-muted">$</span> {globalError}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
             <div>
+              <label className="mb-1 block font-mono text-[11px] text-text-muted">
+                <span className="text-brand">email</span>~
+              </label>
               <input
                 name="email"
                 type="email"
                 required
-                className="input"
+                className="input font-mono"
                 autoComplete="email"
-                placeholder="Email"
+                placeholder="you@domain.com"
               />
-              {errors.email && <p className="mt-1 text-xs text-error">{errors.email[0]}</p>}
+              {errors.email && (
+                <p className="mt-1 font-mono text-xs text-error">
+                  <span className="text-text-muted">$</span> {errors.email[0]}
+                </p>
+              )}
             </div>
             <div>
+              <label className="mb-1 block font-mono text-[11px] text-text-muted">
+                <span className="text-brand">user</span>~
+              </label>
               <input
                 name="username"
                 type="text"
                 required
-                className="input"
+                className="input font-mono"
                 autoComplete="name"
-                placeholder="Username"
+                placeholder="handle"
               />
-              {errors.username && <p className="mt-1 text-xs text-error">{errors.username[0]}</p>}
+              {errors.username && (
+                <p className="mt-1 font-mono text-xs text-error">
+                  <span className="text-text-muted">$</span> {errors.username[0]}
+                </p>
+              )}
             </div>
             <div>
+              <label className="mb-1 block font-mono text-[11px] text-text-muted">
+                <span className="text-brand">pass</span>~
+              </label>
               <input
                 name="password"
                 type="password"
                 required
                 minLength={8}
-                className="input"
+                className="input font-mono"
                 autoComplete="new-password"
-                placeholder="Password (min 8 chars)"
+                placeholder="min 8 chars"
               />
-              {errors.password && <p className="mt-1 text-xs text-error">{errors.password[0]}</p>}
+              {errors.password && (
+                <p className="mt-1 font-mono text-xs text-error">
+                  <span className="text-text-muted">$</span> {errors.password[0]}
+                </p>
+              )}
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full h-9">
-              {loading ? 'Creating...' : 'Create account'}
+            <button type="submit" disabled={loading} className="btn-primary w-full h-10 font-mono text-sm">
+              {loading ? '> creating account...' : '> create user'}
             </button>
           </form>
-        </div>
+        </TerminalWindow>
 
-        <p className="mt-4 text-center text-xs text-text-muted">
-          Already have an account?{' '}
-          <Link href="/signin" className="text-brand hover:text-brand-hover transition-colors">Sign in</Link>
+        <p className="mt-4 text-center font-mono text-xs text-text-muted">
+          <span className="text-text-muted">$</span> already registered?{' '}
+          <Link href="/signin" className="text-brand hover:text-brand-hover transition-colors">ssh login</Link>
         </p>
       </div>
     </main>

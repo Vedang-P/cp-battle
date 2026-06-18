@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
+import { isValidId } from '@/lib/validation';
 import { db } from '@cp-battle/db';
 import { judgeSubmission, getLanguage } from '@cp-battle/judge';
 import type { LanguageId } from '@cp-battle/judge';
@@ -7,6 +8,8 @@ import { MATCH_CONFIG, type MatchModeType } from '@cp-battle/match';
 import { finalizeMatch } from '@cp-battle/match';
 import { emitToMatch } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +47,27 @@ export async function POST(
   try {
     const user = await requireUser();
     const { matchId } = params;
+
+    if (!isValidId(matchId)) {
+      return NextResponse.json({ error: 'Invalid match ID' }, { status: 400 });
+    }
+
     const body = await req.json();
+
+    // Per-user rate limit: 10/min, 50/hr, 200/day
+    const rateLimit = await checkRateLimit(user.id);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: rateLimit.reason, retryAfterMs: rateLimit.retryAfterMs },
+        { status: 429 },
+      );
+    }
+
+    // Monthly budget check (1000 submissions/month cap)
+    const { allowed } = await incrementAndCheckBudget(user.id);
+    if (!allowed) {
+      return budgetExceededResponse();
+    }
 
     const { problemId, language, code, mode } = body as {
       problemId: string;
@@ -278,18 +301,26 @@ export async function POST(
 
     // 2. Emit opponent progress snapshot to the match room
     const opponentId = user.id === match.playerAId ? match.playerBId : match.playerAId;
-    const playerSnapshot = await buildOpponentSnapshot(matchId, user.id, match.totalProblems);
-    const opponentSnapshot = await buildOpponentSnapshot(matchId, opponentId, match.totalProblems);
-    await emitToMatch(matchId, 'opponent:progress', playerSnapshot);
-    await emitToMatch(matchId, 'opponent:progress', opponentSnapshot);
+    const [playerSnapshot, opponentSnapshot] = await Promise.all([
+      buildOpponentSnapshot(matchId, user.id, match.totalProblems),
+      buildOpponentSnapshot(matchId, opponentId, match.totalProblems),
+    ]);
 
-    // 3. If a problem was unlocked, notify the submitting player
+    // 3. Emit all socket events in parallel
+    const socketPromises = [
+      emitToMatch(matchId, 'submission:verdict', verdictPayload),
+      emitToMatch(matchId, 'opponent:progress', playerSnapshot),
+      emitToMatch(matchId, 'opponent:progress', opponentSnapshot),
+    ];
     if (postJudgeResult.nextProblem) {
       const { emitSocketEvent } = await import('@/lib/socket');
-      await emitSocketEvent(`user:${user.id}`, 'problem:unlocked', {
-        problemOrder: postJudgeResult.nextProblem.problemOrder,
-      });
+      socketPromises.push(
+        emitSocketEvent(`user:${user.id}`, 'problem:unlocked', {
+          problemOrder: postJudgeResult.nextProblem.problemOrder,
+        }),
+      );
     }
+    await Promise.all(socketPromises);
 
     return NextResponse.json({
       submissionId: submission.id,

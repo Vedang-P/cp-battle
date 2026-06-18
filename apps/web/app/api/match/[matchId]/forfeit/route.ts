@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
 import { finalizeMatch } from '@cp-battle/match';
 import { emitToMatch } from '@/lib/socket';
+import { isValidId } from '@/lib/validation';
 import type { MatchEndPayload } from '@cp-battle/realtime';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,10 @@ export async function POST(
   try {
     const user = await requireUser();
     const { matchId } = params;
+
+    if (!isValidId(matchId)) {
+      return NextResponse.json({ error: 'Invalid match ID' }, { status: 400 });
+    }
 
     const match = await db.match.findUnique({ where: { id: matchId } });
     if (!match) {

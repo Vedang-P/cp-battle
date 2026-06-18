@@ -27,6 +27,17 @@ export class TimeoutError extends Error {
 }
 
 const JUDGE0_URL = process.env.JUDGE0_URL ?? 'http://localhost:2358';
+const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY ?? '';
+
+function getJudge0Headers(): Record<string, string> {
+  if (JUDGE0_API_KEY) {
+    return {
+      'X-RapidAPI-Key': JUDGE0_API_KEY,
+      'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
+    };
+  }
+  return {};
+}
 
 /**
  * Judge0 language IDs for the languages CP Battle supports.
@@ -182,7 +193,10 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
   try {
     const res = await fetch(`${JUDGE0_URL}/submissions?${params}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getJudge0Headers(),
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -216,6 +230,7 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
 export async function pingPiston(): Promise<boolean> {
   try {
     const res = await fetch(`${JUDGE0_URL}/languages`, {
+      headers: getJudge0Headers(),
       signal: AbortSignal.timeout(3000),
     });
     return res.ok;

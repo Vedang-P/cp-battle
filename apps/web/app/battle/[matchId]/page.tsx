@@ -1,42 +1,34 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { io, Socket } from 'socket.io-client';
-import dynamic from 'next/dynamic';
-import ReactMarkdown from 'react-markdown';
 import type { MatchEndPayload, SubmissionVerdictPayload, OpponentSnapshot } from '@cp-battle/realtime';
-import RaceTrack from '@/components/RaceTrack';
-import { ConfettiCanvas } from '@/components/Confetti';
+import { useCountdown } from '@/lib/useCountdown';
+import { BattleHUD } from '@/components/battle/BattleHUD';
+import { ProblemPanel } from '@/components/battle/ProblemPanel';
+import { EditorPanel } from '@/components/battle/EditorPanel';
+import { OutputPanel } from '@/components/battle/OutputPanel';
+import { MatchEndScreen } from '@/components/battle/MatchEndScreen';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { resumeAudio, playJudged, playVictory, playDefeat, playProblemSolved, playOpponentSolved } from '@/lib/sounds';
 
-const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+type LanguageId = 'cpp' | 'python' | 'java';
 
 interface Problem {
   id: string;
-  slug: string;
   title: string;
   descriptionMd: string;
   timeLimitMs: number;
   memoryLimitMb: number;
   points: number;
-  starterCode: Record<string, string>;
-  problemOrder: number;
-  progress: {
-    status: string;
-    wrongSubmissions: number;
-    scoreEarned: number;
-  };
+  progress: { status: string; wrongSubmissions: number; scoreEarned: number };
 }
 
-type LanguageId = 'cpp' | 'python' | 'java';
-
-const LANG_LABELS: Record<LanguageId, string> = {
-  cpp: 'C++',
-  python: 'Python',
-  java: 'Java',
+const DEFAULT_CODE: Record<LanguageId, string> = {
+  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    cout << "Hello World" << endl;\n    return 0;\n}\n`,
+  python: `print("Hello World")\n`,
+  java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello World");\n    }\n}\n`,
 };
 
 interface VerdictResult {
@@ -48,640 +40,331 @@ interface VerdictResult {
   memoryKb?: number;
 }
 
-export default function BattlePage() {
-  const { data: session, status: authStatus } = useSession();
-  const router = useRouter();
-  const params = useParams();
-  const matchId = params.matchId as string;
+interface Props {
+  params: Promise<{ matchId: string }>;
+}
 
+export default function BattlePage({ params }: Props) {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const [matchId, setMatchId] = useState<string>('');
   const [problems, setProblems] = useState<Problem[]>([]);
   const [activeProblem, setActiveProblem] = useState(0);
   const [language, setLanguage] = useState<LanguageId>('cpp');
-  const [code, setCode] = useState('');
-  const [verdict, setVerdict] = useState<VerdictResult | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [remainingMs, setRemainingMs] = useState(0);
-  const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
-  const [opponentName, setOpponentName] = useState('Opponent');
+  const [code, setCode] = useState(DEFAULT_CODE.cpp);
   const [scores, setScores] = useState({ player: 0, opponent: 0 });
-  const [raceProgress, setRaceProgress] = useState({ player: 0, opponent: 0 });
-  const [solvedCount, setSolvedCount] = useState({ player: 0, opponent: 0 });
-  const [totalProblems, setTotalProblems] = useState(3);
-  const [outputTab, setOutputTab] = useState<'result' | 'description'>('result');
-  const [matchMode, setMatchMode] = useState('SPRINT');
-  const [eloDelta, setEloDelta] = useState(0);
-  const [eloAnimating, setEloAnimating] = useState(false);
+  const [verdict, setVerdict] = useState<VerdictResult | null>(null);
+  const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [outputTab, setOutputTab] = useState<'result' | 'description'>('description');
   const [showConfetti, setShowConfetti] = useState(false);
-  const [isPractice, setIsPractice] = useState(false);
-  const [practiceDifficulty, setPracticeDifficulty] = useState('');
+  const [displayElo, setDisplayElo] = useState(0);
+  const [eloDelta, setEloDelta] = useState(0);
+
+  const isPractice = matchId.startsWith('practice-');
+  const practiceDifficulty = isPractice ? matchId.replace('practice-', '') : '';
 
   const socketRef = useRef<Socket | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const languageRef = useRef(language);
   const activeProblemRef = useRef(activeProblem);
-  activeProblemRef.current = activeProblem;
   const problemsRef = useRef(problems);
-  problemsRef.current = problems;
-  const myUserId = (session?.user as any)?.id;
+  const [opponentUserId, setOpponentUserId] = useState<string | null>(null);
 
-  // Load match problems via REST (initial load only)
   useEffect(() => {
-    if (authStatus === 'unauthenticated') {
-      router.push('/signin?callbackUrl=/battle/' + matchId);
-      return;
+    languageRef.current = language;
+  }, [language]);
+
+  useEffect(() => {
+    activeProblemRef.current = activeProblem;
+  }, [activeProblem]);
+
+  useEffect(() => {
+    problemsRef.current = problems;
+  }, [problems]);
+
+  useEffect(() => {
+    params.then((p) => setMatchId(p.matchId));
+  }, [params]);
+
+  // Load saved code for this match
+  useEffect(() => {
+    if (!matchId) return;
+    const key = `cpbattle-code-${matchId}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as { language?: LanguageId; code?: string; activeProblem?: number };
+        if (parsed.language) setLanguage(parsed.language);
+        if (parsed.code) setCode(parsed.code);
+        if (typeof parsed.activeProblem === 'number') setActiveProblem(parsed.activeProblem);
+      } catch { /* ignore */ }
     }
-    if (authStatus !== 'authenticated') return;
-
-    fetch(`/api/match/${matchId}/problems`)
-      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((data) => {
-        setProblems(data.problems);
-        setMatchMode(data.mode || 'SPRINT');
-        setTotalProblems(data.totalProblems || 3);
-        const first = data.problems.find((p: Problem) => p.progress.status === 'UNLOCKED');
-        if (first) {
-          setActiveProblem(data.problems.indexOf(first));
-          setCode(first.starterCode[language] || '');
-        }
-      })
-      .catch(() => router.push('/play'));
-  }, [matchId, authStatus, router]);
-
-  // Load opponent data (initial fetch only — updates come via socket)
-  useEffect(() => {
-    fetch(`/api/match/${matchId}/opponent`)
-      .then((r) => r.json())
-      .then((data) => {
-        setScores(data.scores || { player: 0, opponent: 0 });
-        setRaceProgress(data.raceProgress || { player: 0, opponent: 0 });
-        setSolvedCount(data.solvedCount || { player: 0, opponent: 0 });
-        setTotalProblems(data.totalProblems || 3);
-        if (data.opponent?.username) setOpponentName(data.opponent.username);
-        if (data.isPractice) setIsPractice(true);
-        if (data.practiceDifficulty) setPracticeDifficulty(data.practiceDifficulty);
-      })
-      .catch(() => {});
   }, [matchId]);
 
-  // Socket.IO connection — the single source of truth for real-time events
+  // Save code on change
   useEffect(() => {
-    if (authStatus !== 'authenticated' || !session?.user) return;
+    if (!matchId) return;
+    const key = `cpbattle-code-${matchId}`;
+    localStorage.setItem(key, JSON.stringify({ language, code, activeProblem }));
+  }, [matchId, language, code, activeProblem]);
 
-    const socket = io(
-      typeof window !== 'undefined'
-        ? `${window.location.protocol}//${window.location.hostname}:3002`
-        : 'http://localhost:3002',
-      { transports: ['websocket', 'polling'] },
-    );
+  const { timeStr, timeWarning, isFinished } = useCountdown(matchId);
 
-    socket.on('connect', () => {
-      socket.emit('match:join', matchId, () => {});
+  useEffect(() => {
+    if (isFinished && !matchEnd) {
+      setMatchEnd({
+        matchId,
+        status: 'COMPLETED',
+        winnerId: null,
+        reason: 'time',
+        scoreA: scores.player,
+        scoreB: scores.opponent,
+        eloDeltaA: 0,
+        eloDeltaB: 0,
+      });
+    }
+  }, [isFinished, matchEnd, matchId, scores]);
+
+  useEffect(() => {
+    if (!matchId || !session?.user?.id) return;
+    const userId = session.user.id;
+    const displayName = session.user.name || session.user.email || 'Player';
+
+    const socket = io({
+      path: '/api/socketio',
+      transports: ['websocket', 'polling'],
+      query: {
+        matchId,
+        userId,
+        displayName,
+        isPractice: matchId.startsWith('practice-'),
+      },
     });
-
-    // Match start — opponent data delivered here
-    socket.on('match:start' as any, (payload: any) => {
-      if (payload.opponent) {
-        setOpponentName(payload.opponent.username);
-      }
-      if (payload.endsAt) {
-        const endsAt = new Date(payload.endsAt).getTime();
-        startTimer(endsAt);
-      }
-    });
-
-    // Submission verdict — YOUR submission result
-    socket.on('submission:verdict' as any, (payload: SubmissionVerdictPayload) => {
-      if (payload.problemId === problemsRef.current[activeProblemRef.current]?.id) {
-        setVerdict({
-          verdict: payload.verdict,
-          passed: payload.passed,
-          total: payload.total,
-          error: payload.error,
-          timeMs: payload.timeMs ?? undefined,
-          memoryKb: payload.memoryKb ?? undefined,
-        });
-        playJudged(payload.verdict);
-      }
-    });
-
-    // Opponent progress — the "pressure" feed
-    socket.on('opponent:progress' as any, (payload: OpponentSnapshot) => {
-      // Only update if this is the OPPONENT's data
-      if (payload.userId !== myUserId) {
-        setRaceProgress((prev) => ({ ...prev, opponent: payload.raceProgress }));
-        setSolvedCount((prev) => ({ ...prev, opponent: payload.solvedCount }));
-        setScores((prev) => ({ ...prev, opponent: payload.score }));
-        playOpponentSolved();
-      } else {
-        // Our own data updated
-        setRaceProgress((prev) => ({ ...prev, player: payload.raceProgress }));
-        setSolvedCount((prev) => ({ ...prev, player: payload.solvedCount }));
-        setScores((prev) => ({ ...prev, player: payload.score }));
-      }
-    });
-
-    // Problem unlocked for us
-    socket.on('problem:unlocked' as any, (payload: { problemOrder: number }) => {
-      playProblemSolved();
-      // Reload problems to get updated progress
-      fetch(`/api/match/${matchId}/problems`)
-        .then((r) => r.json())
-        .then((data) => {
-          setProblems(data.problems);
-          // Auto-advance to the unlocked problem
-          const unlocked = data.problems.find((p: Problem) => p.progress.status === 'UNLOCKED');
-          if (unlocked) {
-            setActiveProblem(data.problems.indexOf(unlocked));
-            setCode(unlocked.starterCode[language] || '');
-            setVerdict(null);
-          }
-        });
-    });
-
-    // Timer sync
-    socket.on('timer:sync' as any, (payload: { endsAt: string; remainingMs: number }) => {
-      setRemainingMs(payload.remainingMs);
-    });
-
-    // Match end
-    socket.on('match:end' as any, (payload: MatchEndPayload) => {
-      setMatchEnd(payload);
-      const isWinner = payload.winnerId === myUserId;
-      const isDraw = !payload.winnerId;
-      if (isWinner) {
-        setShowConfetti(true);
-        playVictory();
-      } else if (!isDraw) {
-        playDefeat();
-      }
-      // Animate ELO delta
-      const isPlayerA = payload.scoreA >= payload.scoreB;
-      const myDelta = isPlayerA ? payload.eloDeltaA : payload.eloDeltaB;
-      setEloDelta(myDelta);
-      setEloAnimating(true);
-    });
-
     socketRef.current = socket;
+
+    socket.on('connect_error', () => {
+      // Reconnection handled by Socket.IO automatically
+    });
+
+    socket.on('opponent:progress', (data: OpponentSnapshot) => {
+      if (data.userId === userId) {
+        setScores(prev => ({ ...prev, player: data.score }));
+      } else {
+        setScores(prev => ({ ...prev, opponent: data.score }));
+        setOpponentUserId(data.userId);
+      }
+    });
+
+    socket.on('submission:verdict', (data: SubmissionVerdictPayload) => {
+      setVerdict({ verdict: data.verdict, passed: data.passed, total: data.total, error: data.error, timeMs: data.timeMs ?? undefined, memoryKb: data.memoryKb ?? undefined });
+      setIsSubmitting(false);
+      setOutputTab('result');
+    });
+
+    socket.on('match:end', (data: MatchEndPayload) => {
+      setMatchEnd(data);
+      const elo = data.scoreA > data.scoreB ? data.eloDeltaA : data.eloDeltaB;
+      setDisplayElo(elo);
+      if (data.scoreA > data.scoreB) {
+        setEloDelta(data.eloDeltaA);
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 4000);
+      } else if (data.scoreA < data.scoreB) {
+        setEloDelta(data.eloDeltaA);
+      } else {
+        setEloDelta(0);
+      }
+    });
+
+    socket.on('problem:unlocked', () => {
+      // Problem list will be refreshed via fetch or next submission
+    });
 
     return () => {
       socket.emit('match:leave', matchId);
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [matchId, authStatus, session, myUserId, language]);
+  }, [matchId, session?.user?.id, session?.user?.name, session?.user?.email]);
 
-  // Timer management
-  const startTimer = useCallback((endsAtMs: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    const update = () => {
-      const remaining = Math.max(0, endsAtMs - Date.now());
-      setRemainingMs(remaining);
-      if (remaining <= 0 && timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-    update();
-    timerRef.current = setInterval(update, 1000);
-  }, []);
+  const currentProblem = problems[activeProblem];
 
-  // Also start timer from REST on mount (fallback if socket hasn't connected yet)
-  useEffect(() => {
-    if (matchEnd) return;
-    fetch('/api/match/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.match?.endsAt) {
-          startTimer(new Date(data.match.endsAt).getTime());
-        }
-      });
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [matchEnd, startTimer]);
-
-  // Also poll for match completion as a safety net (catches forfeit from opponent)
-  useEffect(() => {
-    if (matchEnd) return;
-    const check = () => {
-      fetch(`/api/match/${matchId}/result`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.match?.status === 'COMPLETED') {
-            setMatchEnd({
-              matchId, status: 'COMPLETED', winnerId: d.match.winnerId,
-              scoreA: d.match.scoreA, scoreB: d.match.scoreB,
-              eloDeltaA: d.match.eloDeltaA, eloDeltaB: d.match.eloDeltaB,
-              reason: d.match.endReason || 'unknown',
-            });
-          }
-        })
-        .catch(() => {});
-    };
-    const pollRef = setInterval(check, 5000);
-    return () => clearInterval(pollRef);
-  }, [matchId, matchEnd]);
-
-  const switchLanguage = useCallback((lang: LanguageId) => {
+  const handleLanguageChange = useCallback((lang: LanguageId) => {
     setLanguage(lang);
-    const current = problems[activeProblem];
-    if (current) setCode(current.starterCode[lang] || '');
-  }, [problems, activeProblem]);
+    if (!isSubmitting) {
+      setCode(DEFAULT_CODE[lang]);
+    }
+  }, [isSubmitting]);
 
-  const switchProblem = useCallback((idx: number) => {
-    const p = problems[idx];
-    if (!p || p.progress.status === 'LOCKED') return;
-    setActiveProblem(idx);
-    setCode(p.starterCode[language] || '');
+  const handleRun = useCallback(async () => {
+    if (!currentProblem || isSubmitting) return;
+    setIsSubmitting(true);
+    setOutputTab('result');
+    try {
+      const res = await fetch('/api/judge/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId,
+          problemId: currentProblem.id,
+          language,
+          code,
+        }),
+      });
+      const data = await res.json();
+      setVerdict({ verdict: data.verdict || data.error, passed: data.passed ?? 0, total: data.total ?? 0, error: data.error, timeMs: data.timeMs, memoryKb: data.memoryKb });
+      setOutputTab('result');
+    } catch {
+      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [currentProblem, isSubmitting, matchId, language, code]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!currentProblem || isSubmitting) return;
+    setIsSubmitting(true);
     setVerdict(null);
-  }, [problems, language]);
-
-  const handleSubmit = useCallback(async (mode: 'RUN' | 'SUBMIT') => {
-    const current = problems[activeProblem];
-    if (!current) return;
-    setSubmitting(true);
-    setVerdict(null);
-    resumeAudio();
-
+    setOutputTab('result');
     try {
       const res = await fetch(`/api/match/${matchId}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ problemId: current.id, language, code, mode }),
+        body: JSON.stringify({
+          problemId: currentProblem.id,
+          language,
+          code,
+        }),
       });
       const data = await res.json();
-      if (res.ok) {
-        setVerdict({
-          verdict: data.verdict, passed: data.passed, total: data.total,
-          error: data.error, timeMs: data.timeMs, memoryKb: data.memoryKb,
-        });
-        playJudged(data.verdict);
-
-        if (mode === 'SUBMIT' && data.verdict === 'AC') {
-          playProblemSolved();
-          // Reload problems (socket will also send problem:unlocked, but this is immediate)
-          const probRes = await fetch(`/api/match/${matchId}/problems`);
-          const probData = await probRes.json();
-          setProblems(probData.problems);
-          const solvedNow = probData.problems.filter((p: Problem) => p.progress.status === 'SOLVED').length;
-          setSolvedCount((prev) => ({ ...prev, player: solvedNow }));
-          setRaceProgress((prev) => ({ ...prev, player: solvedNow / probData.totalProblems }));
-
-          if (solvedNow >= probData.totalProblems) {
-            // Match will end — wait for socket event
-            return;
-          }
-
-          const nextIdx = probData.problems.findIndex((p: Problem) => p.progress.status === 'UNLOCKED');
-          if (nextIdx !== -1) {
-            setActiveProblem(nextIdx);
-            setCode(probData.problems[nextIdx].starterCode[language] || '');
-            setVerdict(null);
-          }
-        }
-      } else {
-        setVerdict({ verdict: 'CE', passed: 0, total: 0, error: data.error || 'Submission failed' });
+      if (data.error) {
+        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
+        setIsSubmitting(false);
       }
+      // Verdict arrives via socket
     } catch {
-      setVerdict({ verdict: 'CE', passed: 0, total: 0, error: 'Network error' });
-    } finally {
-      setSubmitting(false);
+      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
+      setIsSubmitting(false);
     }
-  }, [matchId, problems, activeProblem, language, code]);
+  }, [currentProblem, isSubmitting, matchId, language, code]);
 
   const handleForfeit = useCallback(async () => {
-    if (!confirm('Are you sure you want to forfeit?')) return;
-    await fetch(`/api/match/${matchId}/forfeit`, { method: 'POST' });
-    router.push('/dashboard');
-  }, [matchId, router]);
+    if (!confirm('Forfeit this match?')) return;
+    try {
+      await fetch(`/api/match/${matchId}/forfeit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language, code }),
+      });
+    } catch { /* ignore */ }
+  }, [matchId, language, code]);
 
-  // Animated ELO counter
-  const [displayElo, setDisplayElo] = useState(0);
   useEffect(() => {
-    if (!eloAnimating) return;
-    const target = eloDelta;
-    const duration = 1500;
-    const start = Date.now();
-    const animate = () => {
-      const elapsed = Date.now() - start;
-      const progress = Math.min(elapsed / duration, 1);
-      // Ease out cubic
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplayElo(Math.round(target * eased));
-      if (progress < 1) requestAnimationFrame(animate);
+    if (!socketRef.current || !matchId || !session?.user?.id) return;
+    const socket = socketRef.current;
+
+    return () => {
+      socket.off('opponent:progress');
+      socket.off('submission:verdict');
+      socket.off('match:end');
+      socket.off('problem:unlocked');
+      socket.off('timer:sync');
     };
-    animate();
-  }, [eloAnimating, eloDelta]);
+  }, [matchId, session?.user?.id]);
 
-  // Match end screen
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'r' && !e.shiftKey) {
+        e.preventDefault();
+        handleRun();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleRun, handleSubmit]);
+
+  // Warning on leave
+  useEffect(() => {
+    if (matchEnd || isPractice) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [matchEnd, isPractice]);
+
   if (matchEnd) {
-    const isWinner = matchEnd.winnerId === myUserId;
-    const isDraw = !matchEnd.winnerId;
-
     return (
-      <>
-        <ConfettiCanvas active={showConfetti} duration={4000} />
-        <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
-          <div className="card w-full max-w-sm p-8 text-center animate-fade-in">
-            <h1
-              className={`text-4xl font-semibold tracking-tight ${
-                isDraw ? 'text-text-secondary' : isWinner ? 'text-success' : 'text-error'
-              }`}
-              style={{ letterSpacing: '-0.04em' }}
-            >
-              {isDraw ? 'Draw' : isWinner ? 'Victory' : 'Defeat'}
-            </h1>
-
-            <div className="mt-4 space-y-1">
-              <div className="text-sm text-text-secondary font-mono tabular-nums">
-                {matchEnd.scoreA} — {matchEnd.scoreB}
-              </div>
-              <div className="text-xs text-text-muted">
-                {solvedCount.player}/{totalProblems} solved vs {solvedCount.opponent}/{totalProblems}
-              </div>
-            </div>
-
-            {/* Animated ELO delta — hidden in practice mode */}
-            {isPractice ? (
-              <div className="mt-6">
-                <div className="text-xs text-text-muted mb-1">Practice</div>
-                <div className="text-lg font-medium text-text-secondary">
-                  No ELO change
-                </div>
-                <div className="text-[11px] text-text-muted mt-1">
-                  {practiceDifficulty} difficulty
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6">
-                <div className="text-xs text-text-muted mb-1">ELO Change</div>
-                <div className={`text-4xl font-semibold tabular-nums ${
-                  eloDelta > 0 ? 'text-success' : eloDelta < 0 ? 'text-error' : 'text-text-muted'
-                }`} style={{ letterSpacing: '-0.03em' }}>
-                  {eloDelta > 0 ? '+' : ''}{displayElo}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 flex gap-2">
-              <button onClick={() => router.push('/play')} className="btn-primary flex-1 h-9 text-sm">
-                Play again
-              </button>
-              <button onClick={() => router.push('/dashboard')} className="btn-ghost flex-1 h-9 text-sm">
-                Dashboard
-              </button>
-            </div>
-          </div>
-        </main>
-      </>
+      <MatchEndScreen
+        matchEnd={matchEnd}
+        myUserId={session?.user?.id || ''}
+        isPractice={isPractice}
+        practiceDifficulty={practiceDifficulty}
+        eloDelta={eloDelta}
+        displayElo={displayElo}
+        showConfetti={showConfetti}
+        solvedCount={{
+          player: matchEnd.scoreA,
+          opponent: matchEnd.scoreB,
+        }}
+        totalProblems={problems.length}
+        onRematch={() => router.push('/play')}
+        onDashboard={() => router.push('/dashboard')}
+      />
     );
   }
 
-  if (problems.length === 0) {
-    return <LoadingSpinner label="Loading battle..." />;
-  }
-
-  const currentProblem = problems[activeProblem] ?? problems[0];
   if (!currentProblem) {
-    return <LoadingSpinner label="Loading problems..." />;
+    return (
+      <main className="flex h-[calc(100vh-2.25rem)] items-center justify-center">
+        <LoadingSpinner label="loading match..." />
+      </main>
+    );
   }
-
-  const minutes = Math.floor(remainingMs / 60000);
-  const seconds = Math.floor((remainingMs % 60000) / 1000);
-  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  const timeWarning = remainingMs < 300000;
 
   return (
-    <main className="flex h-[calc(100vh-3rem)] flex-col">
-      {/* Race track */}
-      <div className="border-b border-border-subtle bg-bg-panel">
-        <RaceTrack
-          playerProgress={raceProgress.player}
-          opponentProgress={raceProgress.opponent}
-          playerName={(session?.user as any)?.username ?? 'You'}
-          opponentName={opponentName}
-          playerSolved={solvedCount.player}
-          opponentSolved={solvedCount.opponent}
-          totalProblems={totalProblems}
+    <main id="main-content" className="h-[calc(100vh-2.25rem)] flex flex-col">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-bg-elevated focus:text-brand">
+        Skip to content
+      </a>
+      <BattleHUD
+        problems={problems}
+        activeProblem={activeProblem}
+        currentProblem={currentProblem}
+        language={language}
+        scores={scores}
+        timeStr={timeStr}
+        timeWarning={timeWarning}
+        isPractice={isPractice}
+        onSwitchProblem={setActiveProblem}
+        onForfeit={handleForfeit}
+      />
+      <div className="flex min-h-0 flex-1 flex-row max-md:flex-col">
+        <ProblemPanel problem={currentProblem} />
+        <EditorPanel
+          language={language}
+          code={code}
+          onCodeChange={setCode}
+          onLanguageChange={handleLanguageChange}
+          onRun={handleRun}
+          onSubmit={handleSubmit}
+          submitting={isSubmitting}
+          isDisabled={currentProblem.progress.status === 'LOCKED'}
         />
       </div>
-
-      {/* Battle HUD */}
-      <div className="flex items-stretch border-b border-border-subtle bg-bg-panel">
-        {/* Problem tabs */}
-        <div className="flex items-center gap-1 border-r border-border-subtle px-3 py-2">
-          {problems.map((p, i) => {
-            const isSolved = p.progress.status === 'SOLVED';
-            const isCurrent = i === activeProblem;
-            const isLocked = p.progress.status === 'LOCKED';
-            return (
-              <button
-                key={p.id}
-                onClick={() => switchProblem(i)}
-                disabled={isLocked}
-                className={`relative h-8 min-w-[2rem] rounded-md px-2 text-xs font-medium transition-all duration-150 ${
-                  isCurrent
-                    ? 'bg-brand text-white shadow-[0_0_12px_rgba(94,106,210,0.3)]'
-                    : isSolved
-                    ? 'bg-success/15 text-success hover:bg-success/20'
-                    : isLocked
-                    ? 'cursor-not-allowed text-text-muted/30'
-                    : 'text-text-muted hover:bg-white/[0.04] hover:text-text-secondary'
-                }`}
-              >
-                {isSolved ? (
-                  <svg className="mx-auto h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <span className="tabular-nums">{i + 1}</span>
-                )}
-                {isCurrent && (
-                  <span className="absolute -bottom-2 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-brand" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Problem title + meta */}
-        <div className="flex flex-1 items-center gap-4 px-4">
-          <div className="flex items-baseline gap-2 overflow-hidden">
-            <span className="truncate text-sm font-medium text-text-primary">{currentProblem.title}</span>
-            <span className="shrink-0 text-[10px] text-text-muted">
-              {currentProblem.points} pts
-            </span>
-          </div>
-        </div>
-
-        {/* Score */}
-        <div className="flex items-center gap-3 border-l border-border-subtle px-4">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-medium uppercase text-brand">You</span>
-            <span className="font-mono text-sm font-semibold text-text-primary tabular-nums">{scores.player}</span>
-          </div>
-          <span className="text-text-muted/40">:</span>
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-sm font-semibold text-text-secondary tabular-nums">{scores.opponent}</span>
-            <span className="text-[10px] font-medium uppercase text-text-muted">Them</span>
-          </div>
-        </div>
-
-        {/* Timer */}
-        <div className={`flex items-center gap-2 border-l border-border-subtle px-4 py-2 ${timeWarning ? 'bg-error/5' : ''}`}>
-          <div className={`h-1.5 w-1.5 rounded-full ${timeWarning ? 'bg-error animate-pulse' : 'bg-success'}`} />
-          <span className={`font-mono text-base font-semibold tabular-nums tracking-wider ${timeWarning ? 'text-error' : 'text-text-primary'}`}>
-            {timeStr}
-          </span>
-        </div>
-
-        {/* Practice badge */}
-        {isPractice && (
-          <div className="flex items-center border-l border-border-subtle px-3">
-            <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
-              Practice
-            </span>
-          </div>
-        )}
-
-        {/* Forfeit */}
-        <button
-          onClick={handleForfeit}
-          className="flex items-center border-l border-border-subtle px-3 text-[11px] text-text-muted/50 transition-colors hover:bg-error/5 hover:text-error"
-        >
-          <svg className="mr-1.5 h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-          </svg>
-          Forfeit
-        </button>
-      </div>
-
-      {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: problem description */}
-        <div className="flex w-1/2 flex-col border-r border-border-subtle">
-          <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
-            <span className="text-xs text-text-muted">
-              {currentProblem.timeLimitMs}ms · {currentProblem.memoryLimitMb}MB
-            </span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 text-sm leading-relaxed text-text-secondary">
-            <ReactMarkdown
-              components={{
-                h2: ({ children }) => <h2 className="text-lg font-semibold text-text-primary mt-6 mb-3 tracking-tight">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-base font-medium text-text-primary mt-4 mb-2">{children}</h3>,
-                code: ({ children }) => <code className="rounded bg-bg-elevated px-1.5 py-0.5 text-xs text-brand">{children}</code>,
-                li: ({ children }) => <li className="ml-4">{children}</li>,
-              }}
-            >
-              {currentProblem.descriptionMd}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Right: editor + output */}
-        <div className="flex flex-1 flex-col">
-          {/* Editor toolbar */}
-          <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
-            <div className="flex items-center gap-0.5">
-              {(Object.keys(LANG_LABELS) as LanguageId[]).map((lang) => (
-                <button
-                  key={lang}
-                  onClick={() => switchLanguage(lang)}
-                  className={`h-6 rounded px-2 text-xs font-medium transition-colors ${
-                    language === lang
-                      ? 'bg-brand/15 text-brand'
-                      : 'text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  {LANG_LABELS[lang]}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => handleSubmit('RUN')}
-                disabled={submitting || currentProblem.progress.status === 'LOCKED' || currentProblem.progress.status === 'SOLVED'}
-                className="btn-ghost h-7 text-xs"
-              >
-                {submitting ? 'Running...' : 'Run'}
-              </button>
-              <button
-                onClick={() => handleSubmit('SUBMIT')}
-                disabled={submitting || currentProblem.progress.status === 'LOCKED' || currentProblem.progress.status === 'SOLVED'}
-                className="btn-primary h-7 text-xs"
-              >
-                {submitting ? 'Judging...' : 'Submit'}
-              </button>
-            </div>
-          </div>
-
-          {/* Monaco */}
-          <div className="flex-1">
-            <MonacoEditor
-              height="100%"
-              language={language === 'cpp' ? 'cpp' : language}
-              theme="vs-dark"
-              value={code}
-              onChange={(v) => setCode(v ?? '')}
-              options={{
-                fontSize: 13,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                minimap: { enabled: false },
-                padding: { top: 12 },
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-              }}
-            />
-          </div>
-
-          {/* Output panel */}
-          <div className="h-48 border-t border-border-subtle">
-            <div className="flex border-b border-border-subtle">
-              <button
-                onClick={() => setOutputTab('result')}
-                className={`px-4 py-1.5 text-xs font-medium transition-colors ${
-                  outputTab === 'result' ? 'text-brand' : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                Output {verdict && `(${verdict.verdict})`}
-              </button>
-              <button
-                onClick={() => setOutputTab('description')}
-                className={`px-4 py-1.5 text-xs font-medium transition-colors ${
-                  outputTab === 'description' ? 'text-brand' : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                Info
-              </button>
-            </div>
-            <div className="h-[calc(100%-2rem)] overflow-y-auto p-3 font-mono text-xs">
-              {outputTab === 'description' ? (
-                <div className="space-y-1 text-text-muted">
-                  <div>Language: {LANG_LABELS[language]}</div>
-                  <div>Time limit: {currentProblem.timeLimitMs}ms</div>
-                  <div>Memory limit: {currentProblem.memoryLimitMb}MB</div>
-                  <div>Wrong submissions: {currentProblem.progress.wrongSubmissions}</div>
-                  {currentProblem.progress.status === 'SOLVED' && (
-                    <div className="text-success">Solved — {currentProblem.progress.scoreEarned} pts</div>
-                  )}
-                  {currentProblem.progress.status === 'LOCKED' && (
-                    <div className="text-error">Locked — solve the previous problem first</div>
-                  )}
-                </div>
-              ) : verdict ? (
-                <div className="space-y-1">
-                  <div className={`font-medium ${verdict.verdict === 'AC' ? 'text-success' : 'text-error'}`}>
-                    {verdict.verdict} — {verdict.passed}/{verdict.total}
-                  </div>
-                  {verdict.timeMs != null && <div className="text-text-muted">Time: {verdict.timeMs}ms</div>}
-                  {verdict.memoryKb != null && <div className="text-text-muted">Memory: {verdict.memoryKb}KB</div>}
-                  {verdict.error && (
-                    <pre className="mt-2 whitespace-pre-wrap text-error/80">{verdict.error}</pre>
-                  )}
-                </div>
-              ) : (
-                <div className="text-text-muted">Run or submit to see output</div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <OutputPanel
+        outputTab={outputTab}
+        onTabChange={setOutputTab}
+        verdict={verdict}
+        problem={currentProblem}
+        language={language}
+      />
     </main>
   );
 }

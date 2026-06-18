@@ -1,3 +1,5 @@
+import { TerminalWindow } from '@/components/TerminalWindow';
+
 export function EmptyState({
   title,
   description,
@@ -8,12 +10,16 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="text-sm font-medium text-text-secondary">{title}</div>
-      {description && (
-        <div className="mt-1 text-xs text-text-muted">{description}</div>
-      )}
-      {action && <div className="mt-4">{action}</div>}
-    </div>
+    <TerminalWindow title="empty.log" showDots={false}>
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <div className="font-mono text-sm text-text-secondary">
+          <span className="text-text-muted/50">$</span> {title}
+        </div>
+        {description && (
+          <div className="mt-1 font-mono text-xs text-text-muted">{description}</div>
+        )}
+        {action && <div className="mt-4">{action}</div>}
+      </div>
+    </TerminalWindow>
   );
 }

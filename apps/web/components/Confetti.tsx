@@ -17,8 +17,8 @@ interface Particle {
 }
 
 const COLORS = [
-  '#5e6ad2', '#7170ff', '#27a644', '#fc7840', '#eb5757',
-  '#f7f8f8', '#b4bcd0', '#ffd700', '#00ffff', '#ff69b4',
+  '#00ff41', '#00cc36', '#27a644', '#fc7840', '#eb5757',
+  '#f7f8f8', '#b4bcd0', '#ffd700', '#00ffff', '#ffb000',
 ];
 
 export function ConfettiCanvas({ active, duration = 3000 }: { active: boolean; duration?: number }) {
@@ -43,7 +43,7 @@ export function ConfettiCanvas({ active, duration = 3000 }: { active: boolean; d
         life: 0,
         maxLife: 60 + Math.random() * 60,
         size: 4 + Math.random() * 6,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)] ?? '#5e6ad2',
+        color: COLORS[Math.floor(Math.random() * COLORS.length)] ?? '#00ff41',
         rotation: Math.random() * Math.PI * 2,
         rotationSpeed: (Math.random() - 0.5) * 0.3,
         shape: Math.random() > 0.5 ? 'rect' : 'circle',

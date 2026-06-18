@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatCard } from '@/components/StatCard';
-import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { EmptyState } from '@/components/EmptyState';
+import { TerminalWindow } from '@/components/TerminalWindow';
+import { GlowText } from '@/components/GlowText';
 
 interface UserProfile {
   id: string;
@@ -56,14 +58,14 @@ export default function DashboardPage() {
     }
   }, [status, router]);
 
-  if (loading) return <LoadingSpinner />;
+  if (loading) return <DashboardSkeleton />;
 
   if (!profile) {
     return (
-      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
+      <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center">
         <div className="text-center">
-          <p className="text-sm text-error">Failed to load profile</p>
-          <button onClick={() => window.location.reload()} className="btn-ghost mt-3 h-8 text-xs">Retry</button>
+          <p className="font-mono text-sm text-error glow-red">error: failed to load profile</p>
+          <button onClick={() => window.location.reload()} className="btn-ghost mt-3 h-8 font-mono text-xs">&gt; retry</button>
         </div>
       </div>
     );
@@ -79,41 +81,45 @@ export default function DashboardPage() {
       <div className="mb-8">
         <div className="flex items-baseline justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-text-primary tracking-tight">{profile.username}</h1>
-            <p className="mt-0.5 text-xs text-text-muted">{profile.email}</p>
+            <h1 className="text-xl font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+              <GlowText color="green">{profile.username}</GlowText>
+            </h1>
+            <p className="mt-0.5 font-mono text-xs text-text-muted">{profile.email}</p>
           </div>
           <div className="text-right">
-            <div className="text-3xl font-semibold text-brand tabular-nums">{profile.elo}</div>
-            <div className="text-xs text-text-muted">ELO</div>
+            <div className="font-mono text-3xl font-semibold text-brand tabular-nums glow-green">{profile.elo}</div>
+            <div className="font-mono text-xs text-text-muted">ELO</div>
           </div>
         </div>
       </div>
 
       {/* Stats row */}
-      <div className="card p-5 mb-8">
-        <div className="grid grid-cols-5 gap-4">
-          <StatCard label="Games" value={profile.gamesPlayed} />
-          <StatCard label="Wins" value={profile.wins} />
-          <StatCard label="Losses" value={profile.losses} />
-          <StatCard label="Draws" value={profile.draws} />
-          <StatCard label="Win %" value={`${winRate}%`} accent />
+      <TerminalWindow title="stats/summary.log" className="mb-8">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-4">
+          <StatCard label="games" value={profile.gamesPlayed} />
+          <StatCard label="wins" value={profile.wins} />
+          <StatCard label="losses" value={profile.losses} />
+          <StatCard label="draws" value={profile.draws} />
+          <StatCard label="win %" value={`${winRate}%`} accent />
         </div>
-      </div>
+      </TerminalWindow>
 
       {/* CTA */}
       <div className="mb-8">
-        <Link href="/play" className="btn-primary w-full h-10 text-sm">
-          Find a match
+        <Link href="/play" className="btn-primary w-full h-10 font-mono text-sm">
+          &gt; find match
         </Link>
       </div>
 
       {/* Match history */}
-      <h2 className="mb-3 text-sm font-medium text-text-secondary tracking-tight">Recent matches</h2>
+      <h2 className="mb-3 font-mono text-sm font-medium text-text-secondary tracking-tight">
+        <span className="text-text-muted/50">$</span> recent matches
+      </h2>
       {history.length === 0 ? (
         <EmptyState
-          title="No matches yet"
-          description="Start playing to build your history"
-          action={<Link href="/play" className="btn-ghost h-8 text-xs">Find a match</Link>}
+          title="no matches yet"
+          description="start playing to build your history"
+          action={<Link href="/play" className="btn-ghost h-8 font-mono text-xs">&gt; find match</Link>}
         />
       ) : (
         <div className="space-y-px">
@@ -132,7 +138,7 @@ export default function DashboardPage() {
                   <StatusBadge variant={draw ? 'draw' : won ? 'win' : 'loss'}>
                     {draw ? 'DRAW' : won ? 'WIN' : 'LOSS'}
                   </StatusBadge>
-                  <span className="text-sm text-text-secondary">vs {opponent.username}</span>
+                  <span className="font-mono text-sm text-text-secondary">vs {opponent.username}</span>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-sm text-text-secondary tabular-nums">
@@ -140,12 +146,12 @@ export default function DashboardPage() {
                   </span>
                   <span
                     className={`font-mono text-xs tabular-nums ${
-                      myDelta > 0 ? 'text-success' : myDelta < 0 ? 'text-error' : 'text-text-muted'
+                      myDelta > 0 ? 'text-success glow-green' : myDelta < 0 ? 'text-error glow-red' : 'text-text-muted'
                     }`}
                   >
                     {myDelta > 0 ? '+' : ''}{myDelta}
                   </span>
-                  <span className="text-xs text-text-muted">
+                  <span className="font-mono text-xs text-text-muted">
                     {new Date(match.createdAt).toLocaleDateString()}
                   </span>
                 </div>

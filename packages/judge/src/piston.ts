@@ -15,6 +15,13 @@
 
 import type { LanguageConfig } from './languages';
 
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
 const PISTON_URL = process.env.PISTON_URL ?? 'http://localhost:2000';
 
 export interface PistonRunResult {

@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
 interface MatchmakingRadarProps {
@@ -14,11 +15,23 @@ export function MatchmakingRadar({ queueTime, className }: MatchmakingRadarProps
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const dots = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const angle = (i / 6) * Math.PI * 2;
+      const radius = 60 + Math.random() * 30;
+      return {
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        delay: i * 0.3,
+        duration: 3 + i * 0.5,
+      };
+    });
+  }, []);
+
   return (
     <div className={cn('relative flex flex-col items-center', className)}>
       {/* Radar rings */}
       <div className="relative h-48 w-48">
-        {/* Animated rings */}
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -31,36 +44,31 @@ export function MatchmakingRadar({ queueTime, className }: MatchmakingRadarProps
 
         {/* Center dot */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className="h-3 w-3 rounded-full bg-brand shadow-[0_0_20px_rgba(94,106,210,0.6)]" />
+          <div className="h-3 w-3 rounded-full bg-brand shadow-[0_0_20px_rgba(0,255,65,0.6)]" />
         </div>
 
         {/* Scanning line */}
         <div
           className="absolute left-1/2 top-1/2 h-24 w-0.5 origin-bottom"
           style={{
-            background: 'linear-gradient(to top, rgba(94,106,210,0.6), transparent)',
+            background: 'linear-gradient(to top, rgba(0,255,65,0.6), transparent)',
             animation: 'radar-scan 2s linear infinite',
           }}
         />
 
         {/* Floating player dots */}
-        {[...Array(6)].map((_, i) => {
-          const angle = (i / 6) * Math.PI * 2;
-          const radius = 60 + Math.random() * 30;
-          const x = Math.cos(angle) * radius;
-          const y = Math.sin(angle) * radius;
-          return (
-            <div
-              key={i}
-              className="absolute left-1/2 top-1/2 h-1.5 w-1.5 rounded-full bg-text-muted/30"
-              style={{
-                transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
-                animation: `radar-float ${3 + i * 0.5}s ease-in-out infinite`,
-                animationDelay: `${i * 0.3}s`,
-              }}
-            />
-          );
-        })}
+        {dots.map((dot, i) => (
+          <div
+            key={i}
+            className="absolute left-1/2 top-1/2 h-1.5 w-1.5 rounded-full bg-text-muted/30"
+            style={{
+              '--x': `${dot.x}px`,
+              '--y': `${dot.y}px`,
+              animation: `radar-float ${dot.duration}s ease-in-out infinite`,
+              animationDelay: `${dot.delay}s`,
+            } as React.CSSProperties}
+          />
+        ))}
       </div>
 
       {/* Timer */}

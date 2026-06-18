@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/session';
 import { db } from '@cp-battle/db';
+import { isValidId } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,10 @@ export async function GET(
   try {
     const user = await requireUser();
     const { matchId } = params;
+
+    if (!isValidId(matchId)) {
+      return NextResponse.json({ error: 'Invalid match ID' }, { status: 400 });
+    }
 
     const match = await db.match.findUnique({
       where: { id: matchId },

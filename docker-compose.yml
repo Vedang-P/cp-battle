@@ -96,7 +96,7 @@ services:
       retries: 10
 
   judge0-server:
-    image: judge0/judge0:1.13.1
+    image: mrkushalsm/judge0:latest
     container_name: cpb-judge0-server
     restart: unless-stopped
     privileged: true
@@ -130,7 +130,7 @@ services:
       start_period: 30s
 
   judge0-worker:
-    image: judge0/judge0:1.13.1
+    image: mrkushalsm/judge0:latest
     container_name: cpb-judge0-worker
     restart: unless-stopped
     privileged: true

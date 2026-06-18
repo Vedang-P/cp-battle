@@ -2,10 +2,14 @@ import { cn } from '@/lib/utils';
 
 export function LoadingSpinner({ className, label }: { className?: string; label?: string }) {
   return (
-    <div className={cn('flex min-h-[calc(100vh-3rem)] items-center justify-center', className)}>
+    <div
+      className={cn('flex min-h-[calc(100vh-2.25rem)] items-center justify-center', className)}
+      role="status"
+      aria-live="polite"
+    >
       <div className="flex items-center gap-3">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-subtle border-t-brand" />
-        {label && <span className="text-xs text-text-muted">{label}</span>}
+        <span className="font-mono text-lg text-brand animate-cursor-blink">█</span>
+        {label && <span className="font-mono text-xs text-text-muted">{label}</span>}
       </div>
     </div>
   );
@@ -13,8 +17,8 @@ export function LoadingSpinner({ className, label }: { className?: string; label
 
 export function LoadingCard({ text = 'Loading...' }: { text?: string }) {
   return (
-    <div className="flex items-center gap-3 py-8 text-sm text-text-muted">
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-border-subtle border-t-brand" />
+    <div className="flex items-center gap-3 py-8 font-mono text-sm text-text-muted" role="status" aria-live="polite">
+      <span className="text-brand animate-cursor-blink">█</span>
       {text}
     </div>
   );

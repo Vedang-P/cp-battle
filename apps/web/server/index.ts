@@ -65,7 +65,7 @@ const httpServer = createServer((req, res) => {
   res.end();
 });
 
-const io = new Server<ClientEvents, ServerEvents>(httpServer, {
+const io: InstanceType<typeof Server<ClientEvents, ServerEvents>> = new Server<ClientEvents, ServerEvents>(httpServer, {
   cors: { origin: process.env.REALTIME_CORS_ORIGIN ?? 'http://localhost:3000', credentials: true },
   maxHttpBufferSize: 1e6,
   connectTimeout: 10000,

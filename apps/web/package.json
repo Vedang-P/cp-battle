@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "dev:realtime": "tsx watch server/index.ts",
-    "dev:matchmaker": "tsx watch server/matchmaker.ts",
-    "dev:finalizer": "tsx watch server/finalizer.ts",
+    "dev:realtime": "tsx watch --env-file=../../.env server/index.ts",
+    "dev:matchmaker": "tsx watch --env-file=../../.env server/matchmaker.ts",
+    "dev:finalizer": "tsx watch --env-file=../../.env server/finalizer.ts",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

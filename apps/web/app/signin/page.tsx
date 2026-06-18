@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Zap } from 'lucide-react';
+import { TerminalWindow } from '@/components/TerminalWindow';
 
-export default function SignInPage() {
+function SignInForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/play';
   const [error, setError] = useState('');
@@ -29,69 +29,87 @@ export default function SignInPage() {
       });
 
       if (res?.error) {
-        setError('Invalid email or password');
+        setError('access denied: invalid credentials');
         setLoading(false);
         return;
       }
 
       window.location.href = res?.url || callbackUrl;
     } catch {
-      setError('Network error. Please try again.');
+      setError('network error. connection refused.');
       setLoading(false);
     }
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary mb-4">
-            <Zap className="h-4 w-4 text-brand" fill="currentColor" />
-            CP Battle
+            <span className="text-brand font-mono">root@cp-battle:~$</span>
           </Link>
-          <h1 className="text-lg font-semibold text-text-primary tracking-tight">Sign in</h1>
-          <p className="mt-1 text-xs text-text-muted">Welcome back</p>
+          <h1 className="text-lg font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
+            <span className="text-brand">ssh</span>{' '}
+            <span className="text-text-primary">login</span>
+          </h1>
+          <p className="mt-1 font-mono text-xs text-text-muted">
+            {'>_ authenticate to continue'}
+          </p>
         </div>
 
-        <div className="card p-6">
+        <TerminalWindow title="auth/login.sh">
           {error && (
-            <div className="mb-4 rounded-md bg-error/10 border border-error/20 px-3 py-2 text-xs text-error">
-              {error}
+            <div className="mb-4 rounded border border-error/30 bg-error/5 px-3 py-2 font-mono text-xs text-error glow-red">
+              <span className="text-text-muted">$</span> {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
             <div>
+              <label className="mb-1 block font-mono text-[11px] text-text-muted">
+                <span className="text-brand">email</span>~
+              </label>
               <input
                 name="email"
                 type="email"
                 required
-                className="input"
+                className="input font-mono"
                 autoComplete="email"
-                placeholder="Email"
+                placeholder="user@example.com"
               />
             </div>
             <div>
+              <label className="mb-1 block font-mono text-[11px] text-text-muted">
+                <span className="text-brand">pass</span>~
+              </label>
               <input
                 name="password"
                 type="password"
                 required
-                className="input"
+                className="input font-mono"
                 autoComplete="current-password"
-                placeholder="Password"
+                placeholder="••••••••"
               />
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full h-9">
-              {loading ? 'Signing in...' : 'Sign in'}
+            <button type="submit" disabled={loading} className="btn-primary w-full h-10 font-mono text-sm">
+              {loading ? '> authenticating...' : '> ssh connect'}
             </button>
           </form>
-        </div>
+        </TerminalWindow>
 
-        <p className="mt-4 text-center text-xs text-text-muted">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-brand hover:text-brand-hover transition-colors">Create one</Link>
+        <p className="mt-4 text-center font-mono text-xs text-text-muted">
+          <span className="text-text-muted">$</span> don&apos;t have access?{' '}
+          <Link href="/signup" className="text-brand hover:text-brand-hover transition-colors">create account</Link>
         </p>
       </div>
     </main>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense>
+      <SignInForm />
+    </Suspense>
   );
 }
