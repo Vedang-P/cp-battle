@@ -322,14 +322,14 @@ export default function BattlePage({ params }: Props) {
 
   if (!currentProblem) {
     return (
-      <main className="flex h-[calc(100vh-2.25rem)] items-center justify-center">
+      <main className="flex h-[calc(100vh-3rem)] items-center justify-center">
         <LoadingSpinner label="loading match..." />
       </main>
     );
   }
 
   return (
-    <main id="main-content" className="h-[calc(100vh-2.25rem)] flex flex-col">
+    <main id="main-content" className="h-[calc(100vh-3rem)] flex flex-col">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-bg-elevated focus:text-brand">
         Skip to content
       </a>

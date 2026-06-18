@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 export function LoadingSpinner({ className, label }: { className?: string; label?: string }) {
   return (
     <div
-      className={cn('flex min-h-[calc(100vh-2.25rem)] items-center justify-center', className)}
+      className={cn('flex min-h-[calc(100vh-3rem)] items-center justify-center', className)}
       role="status"
       aria-live="polite"
     >

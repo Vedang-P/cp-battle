@@ -2,7 +2,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 
 export default function Loading() {
   return (
-    <main className="flex h-[calc(100vh-2.25rem)] items-center justify-center">
+    <main className="flex h-[calc(100vh-3rem)] items-center justify-center">
       <LoadingSpinner label="> finding match..." />
     </main>
   );

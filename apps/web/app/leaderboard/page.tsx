@@ -37,7 +37,7 @@ export default function LeaderboardPage() {
 
   if (error) {
     return (
-      <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center">
+      <div className="flex min-h-[calc(100vh-3rem)] items-center justify-center">
         <div className="text-center">
           <p className="font-mono text-sm text-error glow-red">error: failed to load leaderboard</p>
           <button onClick={() => window.location.reload()} className="btn-ghost mt-3 h-8 font-mono text-xs">&gt; retry</button>

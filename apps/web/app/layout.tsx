@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Skip to content
           </a>
           <Navbar />
-          <div id="main-content" className="pt-9">{children}</div>
+          <div id="main-content" className="pt-12">{children}</div>
         </Providers>
       </body>
     </html>

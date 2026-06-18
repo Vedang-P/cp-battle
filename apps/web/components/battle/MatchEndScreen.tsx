@@ -41,7 +41,7 @@ export function MatchEndScreen({
   return (
     <>
       <ConfettiCanvas active={showConfetti} duration={4000} />
-      <main className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center px-4">
+      <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
         <TerminalWindow title="match/result.log" className="w-full max-w-sm">
           <div className="text-center">
             <h1

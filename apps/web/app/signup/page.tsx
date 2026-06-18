@@ -66,7 +66,7 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-primary mb-4">

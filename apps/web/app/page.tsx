@@ -28,16 +28,10 @@ const FEATURES = [
 
 export default function HomePage() {
   return (
-    <main className="relative flex min-h-[calc(100vh-2.25rem)] flex-col items-center justify-center px-6">
+    <main className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-6">
       <MatrixRain opacity={0.04} speed={0.7} />
 
       <div className="relative z-10 mx-auto max-w-xl text-center">
-        {/* Badge */}
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-bg-panel px-3 py-1 text-[11px] text-text-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-          <span className="font-mono">status: live</span>
-        </div>
-
         {/* Hero — terminal style */}
         <div className="mb-8">
           <div className="font-mono text-xs text-text-muted mb-4">

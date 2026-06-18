@@ -109,7 +109,7 @@ export default function PlayPage() {
   }, [router]);
 
   return (
-    <main className="flex min-h-[calc(100vh-2.25rem)] flex-col items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm animate-fade-in space-y-4">
         {/* Ranked Matchmaking */}
         <TerminalWindow title="matchmaking/search.sh">
