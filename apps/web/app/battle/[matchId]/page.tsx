@@ -68,7 +68,9 @@ interface Props {
   params: { matchId: string };
 }
 
-const REALTIME_URL = process.env.NEXT_PUBLIC_REALTIME_URL ?? 'http://localhost:3002';
+const REALTIME_URL =
+  process.env.NEXT_PUBLIC_REALTIME_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3002');
 
 export default function BattlePage({ params }: Props) {
   const router = useRouter();

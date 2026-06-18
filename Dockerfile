@@ -1,7 +1,7 @@
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.7.1 --activate
 
-# --- Dependencies ---
+# --- Dependencies (cached unless lockfile changes) ---
 FROM base AS deps
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -27,27 +27,19 @@ COPY . .
 RUN pnpm db:generate
 RUN pnpm build
 
-# --- Production ---
+# --- Production runner ---
+# Single image serves all containers (web, realtime, workers).
+# Workers override the command in docker-compose.web.yml.
 FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
 RUN corepack enable && corepack prepare pnpm@9.7.1 --activate
 
-# Copy the standalone Next.js output
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
-# Copy Prisma schema + migrations for deploy
-COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-# Copy tsx for running the standalone worker processes
-COPY --from=builder /app/node_modules/.pnpm/tsx@4.9.3/node_modules/tsx ./node_modules/tsx
-COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
-COPY --from=builder /app/packages ./packages
+# Copy built app + all deps + source (workers need TS source for tsx).
+COPY --from=builder /app ./
 
 EXPOSE 3000 3002
 
-# Start all processes via PM2 (installed in ecosystem.config.js)
-CMD ["node", "apps/web/server.js"]
+# Default: Next.js production server.
+CMD ["pnpm", "--filter", "web", "start"]
