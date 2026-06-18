@@ -25,6 +25,11 @@ COPY --from=deps /app/packages/match/node_modules ./packages/match/node_modules
 COPY --from=deps /app/packages/realtime/node_modules ./packages/realtime/node_modules
 COPY . .
 RUN pnpm db:generate
+
+# Provide placeholder secrets so next build can evaluate route modules
+# that read env vars at module scope. Real values come from docker-compose at runtime.
+ENV AUTH_SECRET=build-placeholder
+ENV NEXTAUTH_SECRET=build-placeholder
 RUN pnpm build
 
 # --- Production runner ---
