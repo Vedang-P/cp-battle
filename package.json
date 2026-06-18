@@ -15,6 +15,10 @@
     "dev:bot": "pnpm --filter web dev:bot",
     "build": "pnpm --filter web build",
     "start": "pnpm --filter web start",
+    "start:realtime": "pnpm --filter web start:realtime",
+    "start:matchmaker": "pnpm --filter web start:matchmaker",
+    "start:finalizer": "pnpm --filter web start:finalizer",
+    "start:bot": "pnpm --filter web start:bot",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @cp-battle/db generate",
@@ -22,6 +26,7 @@
     "db:push": "pnpm --filter @cp-battle/db push",
     "db:seed": "pnpm --filter @cp-battle/db seed",
     "db:studio": "pnpm --filter @cp-battle/db studio",
+    "db:migrate:deploy": "pnpm --filter @cp-battle/db migrate:deploy",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   },

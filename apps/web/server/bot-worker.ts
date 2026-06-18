@@ -336,5 +336,35 @@ async function poll() {
   }
 }
 
+// Recursive setTimeout — prevents overlapping polls
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let shuttingDown = false;
+
+function scheduleNextPoll() {
+  if (shuttingDown) return;
+  pollTimer = setTimeout(async () => {
+    await poll();
+    scheduleNextPoll();
+  }, POLL_INTERVAL_MS);
+}
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  console.log(`[bot] Received ${signal}, shutting down...`);
+  shuttingDown = true;
+  if (pollTimer) clearTimeout(pollTimer);
+  // Clear all scheduled timers
+  for (const timers of scheduledTimers.values()) {
+    timers.forEach(clearTimeout);
+  }
+  scheduledTimers.clear();
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (err) => console.error('[bot] Unhandled rejection:', err));
+process.on('uncaughtException', (err) => console.error('[bot] Uncaught exception:', err));
+
 console.log('[bot] Starting bot worker...');
-setInterval(poll, POLL_INTERVAL_MS);
+scheduleNextPoll();

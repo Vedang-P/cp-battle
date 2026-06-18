@@ -10,6 +10,7 @@ import { emitToMatch, emitToUser } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@cp-battle/realtime';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
+import { withJudgeConcurrency } from '@/lib/judge-limiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -154,16 +155,16 @@ export async function POST(
       },
     });
 
-    // Judge
+    // Judge (with concurrency limiting to protect Judge0)
     let result;
     try {
-      result = await judgeSubmission({
+      result = await withJudgeConcurrency(() => judgeSubmission({
         language: langConfig,
         source: code,
         testCases: testCases.map((tc) => ({ input: tc.input, expected: tc.expectedOutput })),
         timeLimitMs: problem.timeLimitMs,
         memoryLimitMb: problem.memoryLimitMb,
-      });
+      }));
     } catch (judgeErr) {
       const msg = judgeErr instanceof Error ? judgeErr.message : String(judgeErr);
       await db.submission.update({

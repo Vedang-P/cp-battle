@@ -14,12 +14,15 @@
 import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import Redis from 'ioredis';
 import type { ClientEvents, ServerEvents } from '@cp-battle/realtime';
 import { matchRoom, userRoom } from '@cp-battle/realtime';
 import { db } from '@cp-battle/db';
 
 const PORT = Number(process.env.REALTIME_PORT ?? 3002);
 const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? '';
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -98,6 +101,12 @@ const io: InstanceType<typeof Server<ClientEvents, ServerEvents>> = new Server<C
   maxHttpBufferSize: 1e6,
   connectTimeout: 10000,
 });
+
+// Redis adapter — enables horizontal scaling: multiple realtime instances
+// share rooms and can emit to sockets connected to any instance.
+const pubClient = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+const subClient = pubClient.duplicate();
+io.adapter(createAdapter(pubClient, subClient));
 
 // Track connected sockets per match
 const matchSockets = new Map<string, Set<string>>();
@@ -208,3 +217,20 @@ export { io, matchRoom, userRoom };
 httpServer.listen(PORT, () => {
   console.log(`[realtime] Socket.IO server listening on :${PORT}`);
 });
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  console.log(`[realtime] Received ${signal}, shutting down...`);
+  io.close(() => {
+    pubClient.disconnect();
+    subClient.disconnect();
+    httpServer.close(() => process.exit(0));
+  });
+  // Force exit after 5s if graceful close hangs
+  setTimeout(() => process.exit(1), 5000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (err) => console.error('[realtime] Unhandled rejection:', err));
+process.on('uncaughtException', (err) => console.error('[realtime] Uncaught exception:', err));

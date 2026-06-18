@@ -50,5 +50,30 @@ async function poll() {
   }
 }
 
+// Recursive setTimeout — prevents overlapping polls
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let shuttingDown = false;
+
+function scheduleNextPoll() {
+  if (shuttingDown) return;
+  pollTimer = setTimeout(async () => {
+    await poll();
+    scheduleNextPoll();
+  }, POLL_INTERVAL_MS);
+}
+
+// Graceful shutdown
+function shutdown(signal: string) {
+  console.log(`[finalizer] Received ${signal}, shutting down...`);
+  shuttingDown = true;
+  if (pollTimer) clearTimeout(pollTimer);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (err) => console.error('[finalizer] Unhandled rejection:', err));
+process.on('uncaughtException', (err) => console.error('[finalizer] Uncaught exception:', err));
+
 console.log('[finalizer] Starting match finalization worker...');
-setInterval(poll, POLL_INTERVAL_MS);
+scheduleNextPoll();
