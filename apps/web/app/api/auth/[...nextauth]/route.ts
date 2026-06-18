@@ -3,6 +3,8 @@ import { authOptions } from '@/lib/auth';
 import { redis } from '@/lib/redis';
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 const RATE_LIMIT_KEY = 'ratelimit:login:';
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
