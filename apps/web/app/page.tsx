@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { MatrixRain } from '@/components/MatrixRain';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
@@ -41,6 +42,7 @@ const ABOUT_TEXT = [
 ];
 
 export default function HomePage() {
+  const { data: session } = useSession();
   const [lines, setLines] = useState<Line[]>([
     { type: 'system', text: 'ZAPDOS v1.0.0' },
     { type: 'system', text: 'Type "help" to get started.' },
@@ -208,7 +210,7 @@ export default function HomePage() {
 
         {/* Quick action buttons below terminal */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link href="/signup" className="btn-primary h-10 px-8 text-sm">
+          <Link href={session ? '/play' : '/signup'} className="btn-primary h-10 px-8 text-sm">
             &gt; start
           </Link>
           <Link href="/leaderboard" className="btn-ghost h-10 px-8 text-sm">
