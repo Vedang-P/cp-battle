@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
 export default function SignUpPage() {
+  const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [globalError, setGlobalError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,13 +53,13 @@ export default function SignUpPage() {
         });
 
         if (signInRes?.error) {
-          window.location.href = '/signin';
+          router.push('/signin');
           return;
         }
 
-        window.location.href = '/play';
+        router.push('/play');
       } catch {
-        window.location.href = '/signin';
+        router.push('/signin');
       }
     } catch {
       setGlobalError('network error. connection refused.');

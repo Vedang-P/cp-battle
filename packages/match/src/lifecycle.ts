@@ -91,8 +91,17 @@ export async function pickProblemsForMatch(
   const matchUsed = new Set<string>();
   const sequence: string[] = [];
 
+  // Build difficulty list from mode composition instead of random assignment
+  const difficulties: Array<'EASY' | 'MEDIUM'> = [];
+  for (const slot of cfg.composition) {
+    const diff = slot.difficulty === 'HARD' ? 'MEDIUM' : slot.difficulty;
+    for (let i = 0; i < slot.count; i++) {
+      difficulties.push(diff);
+    }
+  }
+
   for (let i = 0; i < cfg.totalProblems; i++) {
-    const diff = randomDifficulty();
+    const diff = difficulties[i] ?? 'EASY';
     sequence.push(await pick(diff, used, matchUsed));
   }
 

@@ -8,6 +8,7 @@
 
 html, body {
   height: 100%;
+  overflow-x: hidden;
   background-color: #050505;
   color: #00cc36;
   font-feature-settings: "cv01", "ss03", "liga" 1;

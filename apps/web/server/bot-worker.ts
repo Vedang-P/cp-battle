@@ -258,6 +258,13 @@ async function scheduleBotSubmission(
           timers.forEach(clearTimeout);
           scheduledTimers.delete(matchId);
         }
+
+        // Clean up processedSubmissions entries for this match
+        for (const key of processedSubmissions) {
+          if (key.startsWith(`${matchId}:`)) {
+            processedSubmissions.delete(key);
+          }
+        }
       }
     } catch (err) {
       console.error(`[bot] Error in correct submission:`, err);

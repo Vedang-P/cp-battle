@@ -185,11 +185,14 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
   socket.on('match:forfeit', (matchId) => {
     // Forward the forfeit to the match API via HTTP POST
-    fetch(`http://localhost:3000/api/match/${matchId}/forfeit`, {
+    const appUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
+    fetch(`${appUrl}/api/match/${matchId}/forfeit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: socket.userId }),
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error(`[realtime] forfeit failed for match ${matchId}:`, err);
+    });
     console.log(`[realtime] ${socket.id} forfeited match ${matchId}`);
   });
 

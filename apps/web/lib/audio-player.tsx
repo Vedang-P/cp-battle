@@ -7,6 +7,8 @@
  * - Mute toggle persisted in localStorage.
  * - Volume persisted in localStorage.
  * - Uses a module-level singleton Audio element so music persists across navigations.
+ * - Handles audio load errors by skipping to the next track.
+ * - Pauses/resumes on tab visibility changes (mobile-friendly).
  */
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
@@ -42,6 +44,8 @@ let singletonAudio: HTMLAudioElement | null = null;
 let singletonTracks: Track[] = [];
 let singletonTrackIndex = 0;
 let singletonEndedHandler: (() => void) | null = null;
+let singletonErrorHandler: (() => void) | null = null;
+let singletonHasSetSrc = false;
 
 function getAudio(): HTMLAudioElement {
   if (!singletonAudio) {
@@ -52,12 +56,26 @@ function getAudio(): HTMLAudioElement {
   return singletonAudio;
 }
 
+/** Read saved mute preference synchronously (safe for SSR since window check guards it). */
+function getInitialMuted(): boolean {
+  if (typeof window === 'undefined') return true;
+  const saved = localStorage.getItem(STORAGE_KEY_MUTED);
+  return saved !== null ? saved === 'true' : true;
+}
+
+/** Read saved volume preference synchronously. */
+function getInitialVolume(): number {
+  if (typeof window === 'undefined') return 0.4;
+  const saved = localStorage.getItem(STORAGE_KEY_VOLUME);
+  return saved !== null ? parseFloat(saved) : 0.4;
+}
+
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
   const [tracks, setTracks] = useState<Track[]>(singletonTracks);
   const [trackIndex, setTrackIndex] = useState(singletonTrackIndex);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [volume, setVolumeState] = useState(0.4);
+  const [isMuted, setIsMuted] = useState(getInitialMuted);
+  const [volume, setVolumeState] = useState(getInitialVolume);
   const [initialized, setInitialized] = useState(false);
   const trackIndexRef = useRef(trackIndex);
   trackIndexRef.current = trackIndex;
@@ -65,14 +83,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   tracksRef.current = tracks;
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
+  const isMutedRef = useRef(isMuted);
+  isMutedRef.current = isMuted;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
-  // Load manifest + saved preferences on mount
+  // Load manifest on mount
   useEffect(() => {
-    const savedMuted = localStorage.getItem(STORAGE_KEY_MUTED);
-    const savedVolume = localStorage.getItem(STORAGE_KEY_VOLUME);
-    if (savedMuted !== null) setIsMuted(savedMuted === 'true');
-    if (savedVolume !== null) setVolumeState(parseFloat(savedVolume));
-
     fetch('/audio/manifest.json')
       .then((r) => r.json())
       .then((data) => {
@@ -82,9 +99,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
           const audio = getAudio();
 
+          // Set initial volume from saved preference
+          audio.volume = isMutedRef.current ? 0 : volumeRef.current;
+
           // Only set src if not already playing (preserve current playback)
-          if (!audio.src || audio.src === window.location.href) {
+          if (!singletonHasSetSrc) {
             audio.src = `/audio/music/${data.tracks[0].file}`;
+            singletonHasSetSrc = true;
           }
 
           // Wire up ended handler (once)
@@ -100,6 +121,22 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
               setTrackIndex(next);
             };
             audio.addEventListener('ended', singletonEndedHandler);
+          }
+
+          // Wire up error handler (once) — skip to next track on load failure
+          if (!singletonErrorHandler) {
+            singletonErrorHandler = () => {
+              console.warn('[audio] track failed to load, skipping to next');
+              const next = (trackIndexRef.current + 1) % tracksRef.current.length;
+              const nextTrack = tracksRef.current[next];
+              if (nextTrack) {
+                audio.src = `/audio/music/${nextTrack.file}`;
+                audio.play().catch(() => {});
+              }
+              singletonTrackIndex = next;
+              setTrackIndex(next);
+            };
+            audio.addEventListener('error', singletonErrorHandler);
           }
 
           setInitialized(true);
@@ -131,6 +168,33 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     return () => {
       audio.removeEventListener('play', check);
       audio.removeEventListener('pause', check);
+    };
+  }, [initialized]);
+
+  // Pause on tab hide, resume on tab show (mobile-friendly)
+  useEffect(() => {
+    if (!initialized) return;
+
+    let wasPlayingBeforeHide = false;
+
+    const handleVisibility = () => {
+      const audio = singletonAudio;
+      if (!audio) return;
+
+      if (document.hidden) {
+        // Tab is being hidden — remember if we were playing
+        wasPlayingBeforeHide = !audio.paused;
+      } else {
+        // Tab is visible again — resume if we were playing before
+        if (wasPlayingBeforeHide && !isMutedRef.current) {
+          audio.play().catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [initialized]);
 

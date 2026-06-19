@@ -94,6 +94,7 @@ export default function BattlePage({ params }: Props) {
   const [showForfeitModal, setShowForfeitModal] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
+  const matchMetaRef = useRef<MatchMeta | null>(null);
   const userId = session?.user?.id ?? '';
 
   // ── Fetch opponent state ──────────────────────────────────────────────
@@ -162,12 +163,24 @@ export default function BattlePage({ params }: Props) {
     if (matchId) fetchMatchData();
   }, [matchId, fetchMatchData]);
 
-  // ── Per-problem code persistence ──────────────────────────────────────
+  // Keep matchMetaRef in sync for socket handlers
+  useEffect(() => {
+    matchMetaRef.current = matchMeta;
+  }, [matchMeta]);
+
+  // ── Per-problem code persistence (debounced) ─────────────────────────
+  const codeSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const currentProb = problems[activeProblem];
     if (!matchId || !currentProb) return;
     const key = `zapdos-code-${matchId}-${currentProb.id}`;
-    localStorage.setItem(key, JSON.stringify({ language, code }));
+    if (codeSaveTimerRef.current) clearTimeout(codeSaveTimerRef.current);
+    codeSaveTimerRef.current = setTimeout(() => {
+      localStorage.setItem(key, JSON.stringify({ language, code }));
+    }, 500);
+    return () => {
+      if (codeSaveTimerRef.current) clearTimeout(codeSaveTimerRef.current);
+    };
   }, [matchId, activeProblem, language, code, problems]);
 
   // ── Countdown ─────────────────────────────────────────────────────────
@@ -178,14 +191,15 @@ export default function BattlePage({ params }: Props) {
 
   // ── Local match:end fallback if server never sends it ─────────────────
   useEffect(() => {
-    if (isFinished && !matchEnd && matchMeta) {
+    if (isFinished && !matchEnd && matchMetaRef.current) {
+      const meta = matchMetaRef.current;
       // Fetch the authoritative result
       fetch(`/api/match/${matchId}/result`)
         .then((r) => (r.ok ? r.json() : null))
         .then((resp) => {
           if (resp?.match) {
             const m = resp.match;
-            const isPlayerA = matchMeta.playerAId === userId;
+            const isPlayerA = meta.playerAId === userId;
             setMatchEnd({
               matchId,
               status: 'COMPLETED',
@@ -201,7 +215,7 @@ export default function BattlePage({ params }: Props) {
         })
         .catch(() => {});
     }
-  }, [isFinished, matchEnd, matchId, matchMeta, userId]);
+  }, [isFinished, matchEnd, matchId, userId]);
 
   // ── Socket.IO connection ──────────────────────────────────────────────
   useEffect(() => {
@@ -271,8 +285,9 @@ export default function BattlePage({ params }: Props) {
       });
 
       socket.on('match:end', (data: MatchEndPayload) => {
-        if (!matchMeta) return;
-        const isPlayerA = matchMeta.playerAId === userId;
+        const meta = matchMetaRef.current;
+        if (!meta) return;
+        const isPlayerA = meta.playerAId === userId;
         const myDelta = isPlayerA ? data.eloDeltaA : data.eloDeltaB;
         const opponentDelta = isPlayerA ? data.eloDeltaB : data.eloDeltaA;
         const myScore = isPlayerA ? data.scoreA : data.scoreB;
@@ -306,7 +321,7 @@ export default function BattlePage({ params }: Props) {
       }
       socketRef.current = null;
     };
-  }, [matchId, userId, session?.user?.username, matchMeta, fetchMatchData]);
+  }, [matchId, userId, session?.user?.username, fetchMatchData]);
 
   // ── Handlers ──────────────────────────────────────────────────────────
   const currentProblem = problems[activeProblem];

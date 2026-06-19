@@ -2,12 +2,13 @@
 
 import { Suspense, useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalWindow } from '@/components/TerminalWindow';
 
 function SignInForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/play';
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +35,7 @@ function SignInForm() {
         return;
       }
 
-      window.location.href = res?.url || callbackUrl;
+      router.push(res?.url || callbackUrl);
     } catch {
       setError('network error. connection refused.');
       setLoading(false);

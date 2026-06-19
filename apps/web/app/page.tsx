@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { MatrixRain } from '@/components/MatrixRain';
 import { TerminalWindow } from '@/components/TerminalWindow';
@@ -43,6 +44,7 @@ const ABOUT_TEXT = [
 
 export default function HomePage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [lines, setLines] = useState<Line[]>([
     { type: 'system', text: 'ZAPDOS v1.0.0' },
     { type: 'system', text: 'Type "help" to get started.' },
@@ -85,26 +87,26 @@ export default function HomePage() {
         break;
       case 'play':
         addOutput(['redirecting to matchmaking lobby...', '> /play']);
-        setTimeout(() => { window.location.href = '/play'; }, 800);
+        setTimeout(() => { router.push('/play'); }, 800);
         break;
       case 'rank':
       case 'leaderboard':
         addOutput(['loading leaderboard...', '> /leaderboard']);
-        setTimeout(() => { window.location.href = '/leaderboard'; }, 800);
+        setTimeout(() => { router.push('/leaderboard'); }, 800);
         break;
       case 'signup':
       case 'register':
         addOutput(['creating new account...', '> /signup']);
-        setTimeout(() => { window.location.href = '/signup'; }, 800);
+        setTimeout(() => { router.push('/signup'); }, 800);
         break;
       case 'feedback':
         addOutput(['opening feedback page...', '> /feedback']);
-        setTimeout(() => { window.location.href = '/feedback'; }, 800);
+        setTimeout(() => { router.push('/feedback'); }, 800);
         break;
       case 'login':
       case 'signin':
         addOutput(['> /signin']);
-        setTimeout(() => { window.location.href = '/signin'; }, 800);
+        setTimeout(() => { router.push('/signin'); }, 800);
         break;
       case 'ls':
         addOutput(['help  play  rank  signup  about  clear']);

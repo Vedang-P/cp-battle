@@ -11,11 +11,6 @@ export function MusicToggle() {
   const player = useAudioPlayer();
   if (!player) return null;
 
-  // If no tracks loaded (no manifest or empty), don't render
-  if (player.trackIndex === 0 && !player.currentTrack && player.isPlaying === false) {
-    // Still render — user might add tracks later. But be subtle.
-  }
-
   return (
     <button
       onClick={player.toggleMute}
