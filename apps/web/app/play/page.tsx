@@ -169,14 +169,13 @@ export default function PlayPage() {
                   key={diff}
                   onClick={() => startPractice(diff)}
                   disabled={startingPractice}
-                  className={`flex flex-col items-center rounded-lg border px-3 py-3 font-mono text-xs font-medium transition-all duration-150 ${
+                  className={`flex items-center justify-center rounded-lg border px-4 py-4 font-mono text-base font-semibold tracking-wide transition-all duration-150 ${
                     diff === 'EASY'
                       ? 'border-success/30 text-success hover:bg-success/10 hover:border-success/50'
                       : 'border-warning/30 text-warning hover:bg-warning/10 hover:border-warning/50'
                   } ${startingPractice ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  <span className="text-sm mb-1">{diff === 'EASY' ? '⚡' : '🔥'}</span>
-                  <span>{diff === 'EASY' ? 'easy' : 'medium'}</span>
+                  {diff === 'EASY' ? 'easy' : 'medium'}
                 </button>
               ))}
             </div>

@@ -70,5 +70,28 @@ export function renderMath(md: string): string {
       .replace(/\\;/g, ' ');
   });
 
+  // Also convert bare LaTeX commands outside $ delimiters (used in constraint lines)
+  result = result
+    .replace(/\\leq?\b/g, '≤')
+    .replace(/\\geq?\b/g, '≥')
+    .replace(/\\neq?\b/g, '≠')
+    .replace(/\\times/g, '×')
+    .replace(/\\div/g, '÷')
+    .replace(/\\pm/g, '±')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\dots/g, '...')
+    .replace(/\\cdots/g, '···')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\rightarrow/g, '→')
+    .replace(/\\leftarrow/g, '←')
+    .replace(/\\Rightarrow/g, '⇒')
+    .replace(/\\Leftarrow/g, '⇐')
+    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+    .replace(/10\^\{(\d+)\}/g, '10^$1')
+    .replace(/10\^(\d+)/g, '10^$1')
+    .replace(/2\^\{(\d+)\}/g, '2^$1')
+    .replace(/2\^(\d+)/g, '2^$1');
+
   return result;
 }

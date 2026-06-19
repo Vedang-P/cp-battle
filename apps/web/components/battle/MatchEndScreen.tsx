@@ -83,11 +83,11 @@ export function MatchEndScreen({
   return (
     <>
       <ConfettiCanvas active={showConfetti} duration={5000} />
-      <main className="flex min-h-[calc(100vh-3rem)] items-center justify-center px-4">
-        <TerminalWindow title="match/result.log" className="w-full max-w-lg">
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <TerminalWindow title="match/result.log" className="w-full max-w-2xl">
           <div className="text-center overflow-x-auto">
             <pre
-              className={`font-mono text-[7px] sm:text-[9px] leading-tight transition-all duration-500 whitespace-pre inline-block text-left ${
+              className={`font-mono text-[10px] sm:text-[13px] leading-tight transition-all duration-500 whitespace-pre inline-block text-left ${
                 showBanner ? 'opacity-100' : 'opacity-0 translate-y-2'
               }`}
               style={{
@@ -109,13 +109,13 @@ export function MatchEndScreen({
               </GlowText>
             </h1>
 
-            <div className="mt-4 space-y-1">
-              <div className="font-mono text-2xl text-text-secondary tabular-nums">
+            <div className="mt-6 space-y-2">
+              <div className="font-mono text-4xl text-text-secondary tabular-nums">
                 {solvedCount.player}{' '}
-                <span className="text-text-muted text-base">:</span>{' '}
+                <span className="text-text-muted text-2xl">:</span>{' '}
                 {solvedCount.opponent}
               </div>
-              <div className="font-mono text-[11px] text-text-muted">
+              <div className="font-mono text-sm text-text-muted">
                 points · {totalProblems} problems
               </div>
             </div>
@@ -147,13 +147,13 @@ export function MatchEndScreen({
               </div>
             )}
 
-            <div className="mt-8 flex gap-2">
-              <button onClick={onRematch} className="btn-primary flex-1 h-10 font-mono text-sm">
+            <div className="mt-10 flex gap-3">
+              <button onClick={onRematch} className="btn-primary flex-1 h-12 font-mono text-base">
                 &gt; rematch
               </button>
               <button
                 onClick={onDashboard}
-                className="btn-ghost flex-1 h-10 font-mono text-sm"
+                className="btn-ghost flex-1 h-12 font-mono text-base"
               >
                 &gt; dashboard
               </button>

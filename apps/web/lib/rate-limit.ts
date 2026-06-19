@@ -92,20 +92,34 @@ export async function checkRateLimit(
 
 export async function checkIpSignupLimit(ip: string): Promise<RateLimitResult> {
   const now = Date.now();
-  const hourKey = `rl:signup:${ip}:${Math.floor(now / 3_600_000)}`;
+  const minKey = `rl:signup:${ip}:min:${Math.floor(now / 60_000)}`;
+  const hourKey = `rl:signup:${ip}:hr:${Math.floor(now / 3_600_000)}`;
 
-  const count = (await redis.eval(
-    INCR_EXPIRE_SCRIPT,
-    1,
-    hourKey,
-    3_600_000,
-  )) as number;
+  const pipe = redis.pipeline();
+  pipe.eval(INCR_EXPIRE_SCRIPT, 1, minKey, 60_000);
+  pipe.eval(INCR_EXPIRE_SCRIPT, 1, hourKey, 3_600_000);
+  const results = await pipe.exec();
 
-  if (count > 5) {
+  const minCount = (results?.[0]?.[1] as number) ?? 0;
+  const hourCount = (results?.[1]?.[1] as number) ?? 0;
+
+  // 50/min allows rapid signups; 200/hr is the safety net
+  if (minCount > 50) {
+    const windowStart = Math.floor(now / 60_000) * 60_000;
+    return {
+      allowed: false,
+      limit: 50,
+      remaining: 0,
+      retryAfterMs: windowStart + 60_000 - now,
+      reason: 'Too many signup attempts. Try again later.',
+    };
+  }
+
+  if (hourCount > 200) {
     const windowStart = Math.floor(now / 3_600_000) * 3_600_000;
     return {
       allowed: false,
-      limit: 5,
+      limit: 200,
       remaining: 0,
       retryAfterMs: windowStart + 3_600_000 - now,
       reason: 'Too many signup attempts. Try again later.',
@@ -114,7 +128,7 @@ export async function checkIpSignupLimit(ip: string): Promise<RateLimitResult> {
 
   return {
     allowed: true,
-    limit: 5,
-    remaining: 5 - count,
+    limit: 50,
+    remaining: Math.max(0, 50 - minCount),
   };
 }
