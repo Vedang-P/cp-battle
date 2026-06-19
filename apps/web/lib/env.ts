@@ -22,4 +22,6 @@ export const env = {
   get judgeConcurrency() { return Number(process.env.JUDGE_CONCURRENCY ?? 4); },
   get googleClientId() { return optional('GOOGLE_CLIENT_ID', ''); },
   get googleClientSecret() { return optional('GOOGLE_CLIENT_SECRET', ''); },
+  get githubClientId() { return optional('GITHUB_CLIENT_ID', ''); },
+  get githubClientSecret() { return optional('GITHUB_CLIENT_SECRET', ''); },
 };

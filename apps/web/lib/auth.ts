@@ -9,6 +9,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
+import GitHubProvider from 'next-auth/providers/github';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { db } from '@zapdos/db';
 import { env } from '@/lib/env';
@@ -35,6 +36,10 @@ export const authOptions: NextAuthOptions = {
           response_type: 'code',
         },
       },
+    }),
+    GitHubProvider({
+      clientId: env.githubClientId ?? '',
+      clientSecret: env.githubClientSecret ?? '',
     }),
     CredentialsProvider({
       name: 'Credentials',
@@ -68,7 +73,7 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       // For OAuth: link account to existing user or create new user
-      if (account?.provider === 'google') {
+      if (account?.provider && account.provider !== 'credentials') {
         const email = user.email?.toLowerCase();
         if (!email) return false;
 
@@ -105,13 +110,19 @@ export const authOptions: NextAuthOptions = {
           });
           user.id = existingUser.id;
         } else {
-          // Create new user from Google
+          // Create new user from OAuth
           const username = email.split('@')[0] ?? email;
+          // Ensure username is unique by appending random suffix if needed
+          let finalUsername = username;
+          const existing = await db.user.findUnique({ where: { username } });
+          if (existing) {
+            finalUsername = `${username}_${Math.random().toString(36).slice(2, 6)}`;
+          }
           const newUser = await db.user.create({
             data: {
               email,
-              username,
-              provider: 'google',
+              username: finalUsername,
+              provider: account.provider,
               providerAccountId: account.providerAccountId,
               passwordHash: null,
               accounts: {
@@ -140,8 +151,8 @@ export const authOptions: NextAuthOptions = {
         token.userId = user.id;
         token.username = user.name ?? '';
       }
-      // For OAuth, ensure we have the correct userId
-      if (account?.provider === 'google' && user?.email) {
+      // For OAuth, ensure we have the correct userId from DB
+      if (account?.provider && account.provider !== 'credentials' && user?.email) {
         const dbUser = await db.user.findUnique({
           where: { email: user.email.toLowerCase() },
           select: { id: true, username: true },
