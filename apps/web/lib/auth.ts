@@ -23,7 +23,6 @@ export const authOptions: NextAuthOptions = {
   adapter,
   session: { strategy: 'jwt' },
   secret: env.authSecret,
-  trustHost: true,
   pages: { signIn: '/signin' },
   providers: [
     GoogleProvider({
