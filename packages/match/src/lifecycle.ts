@@ -30,9 +30,14 @@ function shuffle<T>(arr: T[]): T[] {
   return arr;
 }
 
+/** Pick a random difficulty: 50% EASY, 50% MEDIUM. Never HARD. */
+function randomDifficulty(): 'EASY' | 'MEDIUM' {
+  return Math.random() < 0.5 ? 'EASY' : 'MEDIUM';
+}
+
 /**
  * Pick problems for a match, avoiding ids either player has seen recently.
- * Returns an ordered list of problem IDs matching the mode's composition.
+ * Each slot is randomly assigned EASY or MEDIUM difficulty.
  */
 export async function pickProblemsForMatch(
   playerAId: string,
@@ -58,70 +63,50 @@ export async function pickProblemsForMatch(
     for (const id of m.problemSequence) seen.add(id);
   }
 
-  const pick = async (difficulty: Difficulty, exclude: Set<string>, matchUsed: Set<string>): Promise<string> => {
-    const candidate = await db.problem.findFirst({
+  const pick = async (difficulty: 'EASY' | 'MEDIUM', exclude: Set<string>, matchUsed: Set<string>): Promise<string> => {
+    // Fetch all candidates and pick one at random
+    const candidates = await db.problem.findMany({
       where: { difficulty, isVisible: true, id: { notIn: [...exclude] } },
-      orderBy: { createdAt: 'asc' },
+      select: { id: true },
     });
-    if (candidate) {
-      exclude.add(candidate.id);
-      matchUsed.add(candidate.id);
-      return candidate.id;
+    if (candidates.length > 0) {
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
+      exclude.add(chosen.id);
+      matchUsed.add(chosen.id);
+      return chosen.id;
     }
-    // Fallback: ignore "seen" if we've exhausted the pool, but still avoid duplicates in this match.
-    const fallback = await db.problem.findFirst({
+    // Fallback: ignore "seen" if we've exhausted the pool
+    const fallbacks = await db.problem.findMany({
       where: { difficulty, isVisible: true, id: { notIn: [...matchUsed] } },
-      orderBy: { createdAt: 'asc' },
+      select: { id: true },
     });
-    if (!fallback) throw new Error(`No visible ${difficulty} problem available`);
-    exclude.add(fallback.id);
-    matchUsed.add(fallback.id);
-    return fallback.id;
+    if (fallbacks.length === 0) throw new Error(`No visible ${difficulty} problem available`);
+    const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
+    exclude.add(chosen.id);
+    matchUsed.add(chosen.id);
+    return chosen.id;
   };
 
-  const sequence: string[] = [];
   const used = new Set(seen);
   const matchUsed = new Set<string>();
+  const sequence: string[] = [];
 
-  for (const tier of cfg.composition) {
-    for (let i = 0; i < tier.count; i++) {
-      sequence.push(await pick(tier.difficulty, used, matchUsed));
-    }
+  for (let i = 0; i < cfg.totalProblems; i++) {
+    const diff = randomDifficulty();
+    sequence.push(await pick(diff, used, matchUsed));
   }
 
-  // Shuffle within the sequence so difficulty order varies.
-  // But keep the general tier structure (all easies before mediums, etc.)
-  // by shuffling within contiguous blocks of the same difficulty.
-  const blocks: string[][] = [];
-  let currentBlock: string[] = [];
-  let currentDiff = cfg.composition[0]!.difficulty;
-  for (const id of sequence) {
-    const prob = await db.problem.findUnique({ where: { id }, select: { difficulty: true } });
-    if (prob?.difficulty !== currentDiff) {
-      if (currentBlock.length > 0) blocks.push(currentBlock);
-      currentBlock = [id];
-      currentDiff = prob?.difficulty ?? currentDiff;
-    } else {
-      currentBlock.push(id);
-    }
-  }
-  if (currentBlock.length > 0) blocks.push(currentBlock);
-
-  const result: string[] = [];
-  for (const block of blocks) {
-    result.push(...shuffle(block));
-  }
-  return result;
+  return shuffle(sequence);
 }
 
 /**
- * Pick 3 problems of a specific difficulty for practice mode.
- * Avoids ids either player has seen recently.
+ * Pick 3 problems for practice mode.
+ * Each slot is randomly assigned EASY or MEDIUM difficulty.
  */
 async function pickPracticeProblems(
   playerAId: string,
   playerBId: string,
-  difficulty: Difficulty,
+  _difficulty: Difficulty,
 ): Promise<string[]> {
   const recent = await db.match.findMany({
     where: {
@@ -144,23 +129,25 @@ async function pickPracticeProblems(
   const sequence: string[] = [];
 
   for (let i = 0; i < 3; i++) {
-    const candidate = await db.problem.findFirst({
-      where: { difficulty, isVisible: true, id: { notIn: [...used] } },
-      orderBy: { createdAt: 'asc' },
+    const diff = randomDifficulty();
+    const candidates = await db.problem.findMany({
+      where: { difficulty: diff, isVisible: true, id: { notIn: [...used] } },
+      select: { id: true },
     });
-    if (candidate) {
-      used.add(candidate.id);
-      matchUsed.add(candidate.id);
-      sequence.push(candidate.id);
+    if (candidates.length > 0) {
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
+      used.add(chosen.id);
+      matchUsed.add(chosen.id);
+      sequence.push(chosen.id);
     } else {
-      // Fallback: ignore "seen" if pool exhausted
-      const fallback = await db.problem.findFirst({
-        where: { difficulty, isVisible: true, id: { notIn: [...matchUsed] } },
-        orderBy: { createdAt: 'asc' },
+      const fallbacks = await db.problem.findMany({
+        where: { difficulty: diff, isVisible: true, id: { notIn: [...matchUsed] } },
+        select: { id: true },
       });
-      if (!fallback) throw new Error(`No visible ${difficulty} problem available`);
-      matchUsed.add(fallback.id);
-      sequence.push(fallback.id);
+      if (fallbacks.length === 0) throw new Error(`No visible ${diff} problem available`);
+      const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
+      matchUsed.add(chosen.id);
+      sequence.push(chosen.id);
     }
   }
 

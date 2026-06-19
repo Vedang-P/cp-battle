@@ -6,8 +6,7 @@
  * - Plays through all tracks in /audio/manifest.json, then loops back to track 1.
  * - Mute toggle persisted in localStorage.
  * - Volume persisted in localStorage.
- * - AudioContext resumes on first user gesture (browser autoplay policy).
- * - Music ducks (lowers volume) during SFX playback for drama.
+ * - Uses a module-level singleton Audio element so music persists across navigations.
  */
 
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
@@ -38,102 +37,124 @@ interface Track {
 const STORAGE_KEY_MUTED = 'zapdos-music-muted';
 const STORAGE_KEY_VOLUME = 'zapdos-music-volume';
 
+// Module-level singleton — survives React remounts / page navigations
+let singletonAudio: HTMLAudioElement | null = null;
+let singletonTracks: Track[] = [];
+let singletonTrackIndex = 0;
+let singletonEndedHandler: (() => void) | null = null;
+
+function getAudio(): HTMLAudioElement {
+  if (!singletonAudio) {
+    singletonAudio = new Audio();
+    singletonAudio.loop = false;
+    singletonAudio.preload = 'auto';
+  }
+  return singletonAudio;
+}
+
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [trackIndex, setTrackIndex] = useState(0);
+  const [tracks, setTracks] = useState<Track[]>(singletonTracks);
+  const [trackIndex, setTrackIndex] = useState(singletonTrackIndex);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true); // start muted (autoplay policy)
+  const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolumeState] = useState(0.4);
   const [initialized, setInitialized] = useState(false);
+  const trackIndexRef = useRef(trackIndex);
+  trackIndexRef.current = trackIndex;
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   // Load manifest + saved preferences on mount
   useEffect(() => {
-    fetch('/audio/manifest.json')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.tracks && data.tracks.length > 0) {
-          setTracks(data.tracks);
-        }
-      })
-      .catch(() => {
-        // No manifest — player stays dormant
-      });
-
     const savedMuted = localStorage.getItem(STORAGE_KEY_MUTED);
     const savedVolume = localStorage.getItem(STORAGE_KEY_VOLUME);
     if (savedMuted !== null) setIsMuted(savedMuted === 'true');
     if (savedVolume !== null) setVolumeState(parseFloat(savedVolume));
 
-    setInitialized(true);
-  }, []);
+    fetch('/audio/manifest.json')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.tracks && data.tracks.length > 0) {
+          singletonTracks = data.tracks;
+          setTracks(data.tracks);
 
-  // Create audio element once tracks are loaded
-  useEffect(() => {
-    if (!initialized || tracks.length === 0) return;
+          const audio = getAudio();
 
-    const audio = new Audio();
-    audio.loop = false; // we handle looping manually for playlist mode
-    audio.volume = isMuted ? 0 : volume;
-    audio.preload = 'auto';
-    audioRef.current = audio;
+          // Only set src if not already playing (preserve current playback)
+          if (!audio.src || audio.src === window.location.href) {
+            audio.src = `/audio/music/${data.tracks[0].file}`;
+          }
 
-    const currentTrack = tracks[0];
-    if (currentTrack) {
-      audio.src = `/audio/music/${currentTrack.file}`;
-    }
+          // Wire up ended handler (once)
+          if (!singletonEndedHandler) {
+            singletonEndedHandler = () => {
+              const next = (trackIndexRef.current + 1) % tracksRef.current.length;
+              const nextTrack = tracksRef.current[next];
+              if (nextTrack) {
+                audio.src = `/audio/music/${nextTrack.file}`;
+                audio.play().catch(() => {});
+              }
+              singletonTrackIndex = next;
+              setTrackIndex(next);
+            };
+            audio.addEventListener('ended', singletonEndedHandler);
+          }
 
-    // When a track ends, advance to the next (loop-all)
-    const handleEnded = () => {
-      setTrackIndex((prev) => {
-        const next = (prev + 1) % tracks.length;
-        const nextTrack = tracks[next];
-        if (nextTrack && audioRef.current) {
-          audioRef.current.src = `/audio/music/${nextTrack.file}`;
-          audioRef.current.play().catch(() => {});
+          setInitialized(true);
         }
-        return next;
+      })
+      .catch(() => {
+        setInitialized(true);
       });
-    };
-
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('ended', handleEnded);
-      audio.pause();
-      audioRef.current = null;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, tracks]);
+  }, []);
 
   // Update volume when muted/volume changes
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = isMuted ? 0 : volume;
+    const audio = singletonAudio;
+    if (audio) {
+      audio.volume = isMuted ? 0 : volume;
     }
   }, [isMuted, volume]);
 
+  // Sync playing state from the singleton
+  useEffect(() => {
+    if (!initialized) return;
+    const audio = getAudio();
+    const check = () => {
+      setIsPlaying(!audio.paused);
+    };
+    audio.addEventListener('play', check);
+    audio.addEventListener('pause', check);
+    return () => {
+      audio.removeEventListener('play', check);
+      audio.removeEventListener('pause', check);
+    };
+  }, [initialized]);
+
   const togglePlay = useCallback(() => {
-    if (!audioRef.current || tracks.length === 0) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
+    const audio = getAudio();
+    if (tracksRef.current.length === 0) return;
+    if (!audio.paused) {
+      audio.pause();
     } else {
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+      audio.play().catch(() => {});
     }
-  }, [isPlaying, tracks.length]);
+  }, []);
 
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
       localStorage.setItem(STORAGE_KEY_MUTED, String(next));
-      // If unmuting, also start playing
-      if (!next && audioRef.current && !isPlaying) {
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+      if (!next) {
+        const audio = getAudio();
+        audio.play().catch(() => {});
       }
       return next;
     });
-  }, [isPlaying]);
+  }, []);
 
   const setVolume = useCallback((v: number) => {
     setVolumeState(v);
@@ -141,18 +162,16 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const nextTrack = useCallback(() => {
-    setTrackIndex((prev) => {
-      const next = (prev + 1) % tracks.length;
-      const nextTrack = tracks[next];
-      if (nextTrack && audioRef.current) {
-        audioRef.current.src = `/audio/music/${nextTrack.file}`;
-        if (isPlaying) {
-          audioRef.current.play().catch(() => {});
-        }
-      }
-      return next;
-    });
-  }, [tracks, isPlaying]);
+    const audio = getAudio();
+    const next = (trackIndexRef.current + 1) % tracksRef.current.length;
+    const nextTrack = tracksRef.current[next];
+    if (nextTrack) {
+      audio.src = `/audio/music/${nextTrack.file}`;
+      audio.play().catch(() => {});
+    }
+    singletonTrackIndex = next;
+    setTrackIndex(next);
+  }, []);
 
   const currentTrack = tracks[trackIndex]?.title ?? '';
 
