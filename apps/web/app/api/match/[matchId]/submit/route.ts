@@ -196,8 +196,10 @@ export async function POST(
       return NextResponse.json({ error: 'Judge returned no result' }, { status: 500 });
     }
 
-    // Increment budget only after successful judge result
-    await incrementBudget(user.id);
+    // Increment budget only after successful judge result (SUBMIT mode only)
+    if (submissionMode === 'SUBMIT') {
+      await incrementBudget(user.id);
+    }
 
     // Update submission and progress atomically after judging
     const postJudgeResult = await db.$transaction(async (tx) => {

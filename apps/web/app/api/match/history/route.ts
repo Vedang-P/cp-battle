@@ -11,6 +11,7 @@ export async function GET() {
     const matches = await db.match.findMany({
       where: {
         status: 'COMPLETED',
+        isPractice: false,
         OR: [{ playerAId: user.id }, { playerBId: user.id }],
       },
       orderBy: { createdAt: 'desc' },

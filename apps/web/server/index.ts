@@ -226,9 +226,15 @@ io.on('connection', (socket: AuthenticatedSocket) => {
   });
 
   socket.on('match:heartbeat', (matchId) => {
-    db.match.findUnique({ where: { id: matchId }, select: { endsAt: true } })
+    db.match.findUnique({
+      where: { id: matchId },
+      select: { endsAt: true, playerAId: true, playerBId: true },
+    })
       .then((match) => {
-        const endsAt = match?.endsAt ?? new Date();
+        if (!match) return;
+        // Only respond if the socket user is a participant
+        if (match.playerAId !== socket.userId && match.playerBId !== socket.userId) return;
+        const endsAt = match.endsAt ?? new Date();
         const remainingMs = Math.max(0, endsAt.getTime() - Date.now());
         socket.emit('timer:sync', {
           endsAt: endsAt.toISOString(),

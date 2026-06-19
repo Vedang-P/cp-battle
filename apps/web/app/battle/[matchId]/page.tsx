@@ -25,8 +25,7 @@ import {
   playProblemSolved,
   playOpponentSolved,
 } from '@/lib/sounds';
-
-type LanguageId = 'cpp' | 'python' | 'java';
+import { DEFAULT_CODE, type LanguageId } from '@/lib/default-code';
 
 interface Problem {
   id: string;
@@ -39,12 +38,6 @@ interface Problem {
   starterCode?: Record<string, string>;
   progress: { status: string; wrongSubmissions: number; scoreEarned: number };
 }
-
-const DEFAULT_CODE: Record<LanguageId, string> = {
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // read input and solve\n    return 0;\n}\n`,
-  python: `import sys\ninput = sys.stdin.readline\n\n# read input and solve\n`,
-  java: `import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        // read input and solve\n    }\n}\n`,
-};
 
 interface VerdictResult {
   verdict: string;

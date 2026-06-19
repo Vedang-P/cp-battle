@@ -25,7 +25,7 @@
 - **3 Languages** — C++, Python, Java via Judge0 sandbox
 - **Real-time Battle** — Socket.IO-powered opponent progress feed with Redis adapter for horizontal scaling
 - **Code Editor** — In-browser Monaco editor with syntax highlighting
-- **400+ Real Problems** — Sourced from CSES Problem Set
+- **200+ Real Problems** — Sourced from Codeforces (rating 800-1200)
 - **ELO Rank Tiers** — Bronze → Silver → Gold → Platinum → Diamond → Master → Grandmaster
 - **Win Streaks** — Track hot streaks with visual indicators
 - **Practice Mode** — Play against AI bot with Easy/Medium difficulty
@@ -91,8 +91,8 @@ pnpm infra:up
 pnpm db:generate
 pnpm db:push
 
-# 5. Scrape 400+ real problems from CSES
-pnpm scrape-problems -- --cses
+# 5. Import Codeforces problems
+pnpm import-codeforces
 
 # 6. Start all services (each in a separate terminal, or use start-dev.sh)
 pnpm dev                # Next.js on :3000
@@ -136,27 +136,24 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 
 ## Problem Corpus
 
-Zapdos uses **real problems** sourced from the CSES Problem Set — not generated.
+Zapdos uses **real problems** sourced from Codeforces — not generated.
 
 | Source | Count | How to add |
 |--------|-------|------------|
-| CSES Problem Set | 394 | `pnpm scrape-problems -- --cses` |
-| **Total** | **394+** | |
+| Codeforces (rating 800-1200) | 200 | `pnpm import-codeforces` |
+| **Total** | **200** | |
 
-### Scraping problems
+### Importing problems
 
 ```bash
-pnpm scrape-problems -- --cses      # CSES (394 problems)
-pnpm scrape-problems -- --atcoder   # AtCoder ABC (1000+ problems)
-pnpm scrape-problems                # all sources
+pnpm import-codeforces   # 200 Codeforces easy problems
 ```
 
-The scraper:
-- Fetches real problem statements + sample test cases
-- Saves to DB in batches of 10 (progress is never lost)
-- Live progress output with timestamps
+The importer:
+- Downloads from the `open-r1/codeforces` HuggingFace dataset
+- Filters to rating 800-1200 (easy difficulty)
+- Generates hidden test cases from input/output pairs
 - Upserts by slug (re-running updates existing problems)
-- Biases toward EASY/MEDIUM problems
 
 ### Adding your own music
 
@@ -295,8 +292,8 @@ sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml 
 | `pnpm start` | Start production server |
 | `pnpm db:push` | Sync schema to DB (dev) |
 | `pnpm db:migrate:deploy` | Apply migrations (production) |
-| `pnpm db:seed` | Seed initial problems (now a no-op, use scraper) |
-| `pnpm scrape-problems` | Scrape real problems from CSES/AtCoder |
+| `pnpm db:seed` | Seed initial problems (now a no-op, use importer) |
+| `pnpm import-codeforces` | Import 200 Codeforces problems |
 | `pnpm infra:up` | Start Docker services |
 | `pnpm infra:down` | Stop Docker services |
 | `pnpm typecheck` | Typecheck all workspaces |

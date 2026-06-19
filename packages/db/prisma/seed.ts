@@ -1,10 +1,9 @@
 /**
  * Zapdos — Problem seed script
  *
- * This seed no longer creates hand-authored problems.
- * All problems come from the CSES scraper.
+ * All problems come from the Codeforces importer.
  *
- * Run: pnpm --filter web scrape-problems -- --cses
+ * Run: pnpm --filter web import-codeforces
  *
  * The seed is kept as a no-op so `pnpm db:seed` doesn't fail.
  */
@@ -20,8 +19,8 @@ async function main() {
     return;
   }
 
-  console.log('[seed] No problems found. Run the CSES scraper to populate:');
-  console.log('[seed]   pnpm --filter web scrape-problems -- --cses');
+  console.log('[seed] No problems found. Run the Codeforces importer to populate:');
+  console.log('[seed]   pnpm --filter web import-codeforces');
 }
 
 main()

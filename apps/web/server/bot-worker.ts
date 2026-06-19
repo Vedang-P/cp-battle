@@ -15,7 +15,7 @@
  */
 
 import { db } from '@zapdos/db';
-import { finalizeMatch } from '@zapdos/match';
+import { finalizeMatch, MATCH_CONFIG } from '@zapdos/match';
 import {
   BOT_EMAIL,
   BOT_PROFILES,
@@ -101,7 +101,7 @@ async function createWrongSubmission(
     },
   });
 
-  // Increment wrong submissions on progress
+  // Increment wrong submissions on progress atomically
   const progress = await db.matchProgress.findFirst({
     where: { matchId, userId: botUserId, problemId },
   });
@@ -162,13 +162,13 @@ async function createCorrectSubmission(
     },
   });
 
-  // Update progress to SOLVED
+  // Update progress to SOLVED atomically
   const progress = await db.matchProgress.findFirst({
     where: { matchId, userId: botUserId, problemId },
   });
   if (progress) {
     const problem = await db.problem.findUnique({ where: { id: problemId }, select: { points: true } });
-    const scoreEarned = (problem?.points ?? 100) - progress.wrongSubmissions * 10;
+    const scoreEarned = (problem?.points ?? 100) - progress.wrongSubmissions * MATCH_CONFIG.wrongSubmissionPenalty;
 
     await db.matchProgress.update({
       where: { id: progress.id },
@@ -494,4 +494,8 @@ process.on('unhandledRejection', (err) => console.error('[bot] Unhandled rejecti
 process.on('uncaughtException', (err) => console.error('[bot] Uncaught exception:', err));
 
 console.log('[bot] Starting bot worker...');
-scheduleNextPoll();
+
+// Clean up stale entries from previous runs on startup
+cleanupStaleEntries().then(() => {
+  scheduleNextPoll();
+});

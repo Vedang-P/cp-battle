@@ -19,7 +19,7 @@ export const QUEUE_KEY = 'zapdos:matchmaking:queue';
 export const QUEUE_LOCK_KEY = 'zapdos:matchmaking:lock';
 /** Per-player metadata: { elo, joinedAtMs }. Keyed by userId. */
 const QUEUE_META_PREFIX = 'zapdos:matchmaking:meta:';
-const META_TTL_MS = 5 * 60 * 1000; // 5 minutes — stale entries expire
+const META_TTL_MS = 10 * 60 * 1000; // 10 minutes — stale entries expire
 
 export interface QueueEntry {
   userId: string;

@@ -3,6 +3,7 @@ import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 import { Providers } from '@/components/Providers';
 
 const jetbrainsMono = JetBrains_Mono({
@@ -45,7 +46,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Skip to content
           </a>
           <Navbar />
-          <div id="main-content" className="pt-12">{children}</div>
+          <div id="main-content" className="pt-12 pb-12">{children}</div>
+          <Footer />
         </Providers>
       </body>
     </html>

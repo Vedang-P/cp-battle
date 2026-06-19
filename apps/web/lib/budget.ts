@@ -37,7 +37,7 @@ export async function incrementAndCheckBudget(userId: string): Promise<{
     ttlMs,
   )) as number;
 
-  return { count, allowed: count <= MONTHLY_SUBMISSION_CAP };
+  return { count, allowed: count < MONTHLY_SUBMISSION_CAP };
 }
 
 /** Check budget without incrementing. Returns current count and whether allowed. */

@@ -27,14 +27,11 @@
     "db:seed": "pnpm --filter @zapdos/db seed",
     "db:studio": "pnpm --filter @zapdos/db studio",
     "db:migrate:deploy": "pnpm --filter @zapdos/db migrate:deploy",
-    "scrape-problems": "pnpm --filter web scrape-problems",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   },
   "devDependencies": {
     "typescript": "5.4.5"
   },
-  "dependencies": {
-    "cheerio": "^1.2.0"
-  }
+  "dependencies": {}
 }

@@ -24,6 +24,7 @@ import { db } from '@zapdos/db';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Difficulty } from '@zapdos/db';
+import { DEFAULT_CODE } from '../lib/default-code';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -85,33 +86,8 @@ function stripCr(s: string): string {
   return s.replace(/\r/g, '');
 }
 
-const DEFAULT_STARTER_CODE: Record<string, string> = {
-  cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-int main() {
-    ios::sync_with_stdio(false);
-    cin.tie(nullptr);
-
-    // Your code here
-
-    return 0;
-}`,
-  python: `# Your code here
-def main():
-    pass
-
-if __name__ == "__main__":
-    main()`,
-  java: `import java.util.Scanner;
-
-public class Main {
-    public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
-        // Your code here
-    }
-}`,
-};
+// Use shared starter code from default-code.ts
+const DEFAULT_STARTER_CODE = DEFAULT_CODE;
 
 // ─── Batched DB Import ────────────────────────────────────────────────
 

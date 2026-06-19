@@ -59,12 +59,17 @@ async function acquireLock(): Promise<string | null> {
   return result === 'OK' ? lockValue : null;
 }
 
-/** Release the lock only if we still hold it. */
+/** Release the lock only if we still hold it (atomic via Lua). */
+const RELEASE_LOCK_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+else
+  return 0
+end
+`;
+
 async function releaseLock(lockValue: string): Promise<void> {
-  const current = await redis.get(QUEUE_LOCK_KEY);
-  if (current === lockValue) {
-    await redis.del(QUEUE_LOCK_KEY);
-  }
+  await redis.eval(RELEASE_LOCK_SCRIPT, 1, QUEUE_LOCK_KEY, lockValue);
 }
 
 async function poll(): Promise<void> {

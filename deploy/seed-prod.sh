@@ -6,8 +6,7 @@ set -euo pipefail
 #
 # Runs inside the `web` container on the web VM:
 #   1. prisma migrate deploy  (apply schema)
-#   2. prisma seed            (9 hand-authored problems)
-#   3. scrape CSES            (394 real problems)
+#   2. import Codeforces problems (200 easy problems)
 #
 # Idempotent — re-running upserts by slug.
 # ============================================================
@@ -21,18 +20,11 @@ gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyCheckin
     pnpm --filter @zapdos/db migrate:deploy
 '
 
-echo "▶ Seeding 9 hand-authored problems..."
+echo "▶ Importing 200 Codeforces problems..."
 gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
   cd zapdos
   sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml exec -T web \
-    pnpm --filter @zapdos/db seed
-'
-
-echo "▶ Scraping 394 CSES problems (this takes ~2-4 min)..."
-gcloud compute ssh zapdos-web --zone="$ZONE" --ssh-flag="-o StrictHostKeyChecking=no" --command='
-  cd zapdos
-  sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml exec -T web \
-    pnpm --filter web scrape-problems -- --cses
+    pnpm --filter web import-codeforces
 '
 
 echo ""
