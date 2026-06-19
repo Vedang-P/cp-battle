@@ -32,7 +32,7 @@ const VICTORY_BANNER = [
 ].join('\n');
 
 const GAME_OVER_BANNER = [
-  '█████████                                                                           ',
+  '   █████████                                                                           ',
   '  ███░░░░░███                                                                      ',
   ' ███     ░░░   ██████   █████████████    ██████      ██████  █████ █████  ██████  ████████',
   '░███          ░░░░░███ ░░███░░███░░███  ███░░███    ███░░███░░███ ░░███  ███░░███░░███░░███',
@@ -97,8 +97,7 @@ export function MatchEndScreen({
 
             <div className="mt-4 space-y-1">
               <div className="font-mono text-2xl text-text-secondary tabular-nums">
-                {solvedCount.player}{' '}
-                <span className="text-text-muted text-base">:</span>{' '}
+                {solvedCount.player} <span className="text-text-muted text-base">:</span>{' '}
                 {solvedCount.opponent}
               </div>
               <div className="font-mono text-[11px] text-text-muted">
@@ -115,7 +114,9 @@ export function MatchEndScreen({
               </div>
             ) : (
               <div className="mt-4">
-                <div className="font-mono text-[11px] text-text-muted mb-0.5">[elo delta]</div>
+                <div className="font-mono text-[11px] text-text-muted mb-0.5">
+                  [elo delta]
+                </div>
                 <div
                   className={`font-mono text-3xl font-semibold tabular-nums ${
                     eloDelta > 0
@@ -133,7 +134,10 @@ export function MatchEndScreen({
             )}
 
             <div className="mt-6 flex gap-2">
-              <button onClick={onRematch} className="btn-primary flex-1 h-10 font-mono text-sm">
+              <button
+                onClick={onRematch}
+                className="btn-primary flex-1 h-10 font-mono text-sm"
+              >
                 &gt; rematch
               </button>
               <button
