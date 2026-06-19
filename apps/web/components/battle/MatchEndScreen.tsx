@@ -1,8 +1,6 @@
 'use client';
 
 import { TerminalWindow } from '@/components/TerminalWindow';
-import { GlowText } from '@/components/GlowText';
-import { ConfettiCanvas } from '@/components/Confetti';
 import type { MatchEndPayload } from '@zapdos/realtime';
 import { useEffect, useState } from 'react';
 
@@ -12,7 +10,6 @@ interface MatchEndScreenProps {
   isPractice: boolean;
   practiceDifficulty: string;
   eloDelta: number;
-  showConfetti: boolean;
   solvedCount: { player: number; opponent: number };
   totalProblems: number;
   onRematch: () => void;
@@ -35,8 +32,8 @@ const VICTORY_BANNER = [
 ].join('\n');
 
 const GAME_OVER_BANNER = [
-  '█████████                                                                                ',
-  '  ███░░░░░███                                                                           ',
+  '█████████                                                                           ',
+  '  ███░░░░░███                                                                      ',
   ' ███     ░░░   ██████   █████████████    ██████      ██████  █████ █████  ██████  ████████',
   '░███          ░░░░░███ ░░███░░███░░███  ███░░███    ███░░███░░███ ░░███  ███░░███░░███░░███',
   '░███    █████  ███████  ░███ ░███ ░███ ░███████    ░███ ░███ ░███  ░███ ░███████  ░███ ░░░ ',
@@ -62,7 +59,6 @@ export function MatchEndScreen({
   isPractice,
   practiceDifficulty,
   eloDelta,
-  showConfetti,
   solvedCount,
   totalProblems,
   onRematch,
@@ -82,12 +78,11 @@ export function MatchEndScreen({
 
   return (
     <>
-      <ConfettiCanvas active={showConfetti} duration={5000} />
       <main className="flex min-h-screen items-center justify-center px-4">
         <TerminalWindow title="match/result.log" className="w-full max-w-2xl">
-          <div className="text-center overflow-x-auto">
+          <div className="text-center overflow-hidden">
             <pre
-              className={`font-mono text-[10px] sm:text-[13px] leading-tight transition-all duration-500 whitespace-pre inline-block text-left ${
+              className={`font-mono text-[7px] sm:text-[8px] leading-tight transition-all duration-500 whitespace-pre inline-block text-left ${
                 showBanner ? 'opacity-100' : 'opacity-0 translate-y-2'
               }`}
               style={{
@@ -100,39 +95,29 @@ export function MatchEndScreen({
               {banner}
             </pre>
 
-            <h1
-              className="mt-4 text-3xl font-semibold tracking-tight"
-              style={{ fontFamily: 'var(--font-space-grotesk), sans-serif', letterSpacing: '-0.04em' }}
-            >
-              <GlowText color={color as 'green' | 'red' | 'amber'} intensity="strong">
-                {isDraw ? 'DRAW' : isWinner ? 'VICTORY' : 'GAME OVER'}
-              </GlowText>
-            </h1>
-
-            <div className="mt-6 space-y-2">
-              <div className="font-mono text-4xl text-text-secondary tabular-nums">
+            <div className="mt-4 space-y-1">
+              <div className="font-mono text-2xl text-text-secondary tabular-nums">
                 {solvedCount.player}{' '}
-                <span className="text-text-muted text-2xl">:</span>{' '}
+                <span className="text-text-muted text-base">:</span>{' '}
                 {solvedCount.opponent}
               </div>
-              <div className="font-mono text-sm text-text-muted">
+              <div className="font-mono text-[11px] text-text-muted">
                 points · {totalProblems} problems
               </div>
             </div>
 
             {isPractice ? (
-              <div className="mt-6">
-                <div className="font-mono text-xs text-text-muted mb-1">[practice mode]</div>
-                <div className="font-mono text-lg text-text-secondary">no elo change</div>
-                <div className="font-mono text-[11px] text-text-muted mt-1">
+              <div className="mt-4">
+                <div className="font-mono text-[11px] text-text-muted">no elo change</div>
+                <div className="font-mono text-[10px] text-text-muted mt-0.5">
                   {practiceDifficulty}
                 </div>
               </div>
             ) : (
-              <div className="mt-6">
-                <div className="font-mono text-xs text-text-muted mb-1">[elo delta]</div>
+              <div className="mt-4">
+                <div className="font-mono text-[11px] text-text-muted mb-0.5">[elo delta]</div>
                 <div
-                  className={`font-mono text-4xl font-semibold tabular-nums ${
+                  className={`font-mono text-3xl font-semibold tabular-nums ${
                     eloDelta > 0
                       ? 'text-success glow-green'
                       : eloDelta < 0
@@ -147,13 +132,13 @@ export function MatchEndScreen({
               </div>
             )}
 
-            <div className="mt-10 flex gap-3">
-              <button onClick={onRematch} className="btn-primary flex-1 h-12 font-mono text-base">
+            <div className="mt-6 flex gap-2">
+              <button onClick={onRematch} className="btn-primary flex-1 h-10 font-mono text-sm">
                 &gt; rematch
               </button>
               <button
                 onClick={onDashboard}
-                className="btn-ghost flex-1 h-12 font-mono text-base"
+                className="btn-ghost flex-1 h-10 font-mono text-sm"
               >
                 &gt; dashboard
               </button>

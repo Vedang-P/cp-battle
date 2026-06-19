@@ -87,7 +87,6 @@ export default function BattlePage({ params }: Props) {
   const [matchEnd, setMatchEnd] = useState<MatchEndPayload | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [outputTab, setOutputTab] = useState<'result' | 'description'>('description');
-  const [showConfetti, setShowConfetti] = useState(false);
   const [eloDelta, setEloDelta] = useState(0);
   const [loading, setLoading] = useState(true);
   const [matchMeta, setMatchMeta] = useState<MatchMeta | null>(null);
@@ -287,9 +286,7 @@ export default function BattlePage({ params }: Props) {
 
         resumeAudio();
         if (iWon) {
-          setShowConfetti(true);
           playVictory();
-          setTimeout(() => setShowConfetti(false), 5000);
         } else if (!isDraw) {
           playDefeat();
         }
@@ -456,7 +453,6 @@ export default function BattlePage({ params }: Props) {
         isPractice={matchMeta?.isPractice ?? false}
         practiceDifficulty={matchMeta?.practiceDifficulty ?? ''}
         eloDelta={eloDelta}
-        showConfetti={showConfetti}
         solvedCount={{
           player: scores.player,
           opponent: scores.opponent,
