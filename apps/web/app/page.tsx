@@ -24,6 +24,7 @@ const HELP_TEXT = [
   '  play     — start a coding battle',
   '  rank     — view leaderboard',
   '  signup   — create an account',
+  '  feedback — send us feedback',
   '  about    — what is zapdos?',
   '  clear    — clear the terminal',
 ];
@@ -49,8 +50,6 @@ export default function HomePage() {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [feedbackMsg, setFeedbackMsg] = useState('');
-  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'loading' | 'done'>('idle');
 
   // Auto-scroll to bottom on new lines
   useEffect(() => {
@@ -95,6 +94,10 @@ export default function HomePage() {
       case 'register':
         addOutput(['creating new account...', '> /signup']);
         setTimeout(() => { window.location.href = '/signup'; }, 800);
+        break;
+      case 'feedback':
+        addOutput(['opening feedback page...', '> /feedback']);
+        setTimeout(() => { window.location.href = '/feedback'; }, 800);
         break;
       case 'login':
       case 'signin':
@@ -211,58 +214,6 @@ export default function HomePage() {
           <Link href="/leaderboard" className="btn-ghost h-10 px-8 text-sm">
             &gt; rank
           </Link>
-        </div>
-
-        {/* Feedback section */}
-        <div className="mt-12 w-full max-w-md mx-auto">
-          <TerminalWindow title="feedback/send.sh">
-            <div className="text-center mb-3">
-              <h2 className="text-sm font-medium tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
-                <span className="text-cyan">send feedback</span>
-              </h2>
-              <p className="font-mono text-[11px] text-text-muted mt-0.5">anonymous — helps us improve</p>
-            </div>
-            {feedbackStatus === 'done' ? (
-              <div className="text-center py-4">
-                <p className="font-mono text-sm text-success">thanks for your feedback!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <textarea
-                  value={feedbackMsg}
-                  onChange={(e) => setFeedbackMsg(e.target.value)}
-                  className="input font-mono text-sm h-20 resize-none"
-                  placeholder="type your feedback here..."
-                  maxLength={2000}
-                />
-                <button
-                  onClick={async () => {
-                    if (!feedbackMsg.trim()) return;
-                    setFeedbackStatus('loading');
-                    try {
-                      const res = await fetch('/api/feedback', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: feedbackMsg.trim() }),
-                      });
-                      if (res.ok) {
-                        setFeedbackStatus('done');
-                        setFeedbackMsg('');
-                      } else {
-                        setFeedbackStatus('idle');
-                      }
-                    } catch {
-                      setFeedbackStatus('idle');
-                    }
-                  }}
-                  disabled={feedbackStatus === 'loading' || !feedbackMsg.trim()}
-                  className="btn-ghost w-full h-9 font-mono text-sm"
-                >
-                  {feedbackStatus === 'loading' ? '> sending...' : '> submit'}
-                </button>
-              </div>
-            )}
-          </TerminalWindow>
         </div>
       </div>
     </main>

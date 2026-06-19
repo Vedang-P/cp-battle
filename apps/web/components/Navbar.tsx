@@ -55,6 +55,9 @@ export function Navbar() {
               <Link href="/dashboard" className="text-sm text-text-muted hover:text-text-secondary transition-colors" aria-current={pathname === '/dashboard' ? 'page' : undefined}>
                 &gt; profile
               </Link>
+              <Link href="/feedback" className="text-sm text-text-muted hover:text-text-secondary transition-colors" aria-current={pathname === '/feedback' ? 'page' : undefined}>
+                &gt; feedback
+              </Link>
               <span className="text-border-medium">|</span>
               <button onClick={() => signOut({ callbackUrl: '/' })} className="text-sm text-text-muted hover:text-error transition-colors" aria-label="Sign out">
                 logout
@@ -67,6 +70,9 @@ export function Navbar() {
               </Link>
               <Link href="/signup" className="rounded border border-border-medium bg-transparent px-3 py-1 text-sm text-brand hover:bg-brand-dim hover:border-brand transition-all">
                 &gt; signup
+              </Link>
+              <Link href="/feedback" className="text-sm text-text-muted hover:text-text-secondary transition-colors">
+                &gt; feedback
               </Link>
             </>
           )}
@@ -106,6 +112,9 @@ export function Navbar() {
                 <Link href="/dashboard" className="font-mono text-sm text-text-muted hover:text-text-secondary transition-colors py-1.5" aria-current={pathname === '/dashboard' ? 'page' : undefined}>
                   &gt; profile
                 </Link>
+                <Link href="/feedback" className="font-mono text-sm text-text-muted hover:text-text-secondary transition-colors py-1.5" aria-current={pathname === '/feedback' ? 'page' : undefined}>
+                  &gt; feedback
+                </Link>
                 <button onClick={() => signOut({ callbackUrl: '/' })} className="font-mono text-sm text-text-muted hover:text-error transition-colors py-1.5 text-left" aria-label="Sign out">
                   &gt; logout
                 </button>
@@ -117,6 +126,9 @@ export function Navbar() {
                 </Link>
                 <Link href="/signup" className="font-mono text-sm text-brand hover:text-brand-hover transition-colors py-1.5">
                   &gt; signup
+                </Link>
+                <Link href="/feedback" className="font-mono text-sm text-text-muted hover:text-text-secondary transition-colors py-1.5">
+                  &gt; feedback
                 </Link>
               </>
             )}
