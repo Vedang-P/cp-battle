@@ -1,7 +1,10 @@
 {
   "tracks": [
-    { "file": "track-01.mp3", "title": "Track 1" },
-    { "file": "track-02.mp3", "title": "Track 2" },
-    { "file": "track-03.mp3", "title": "Track 3" }
+    { "file": "Buckshot Roulette_spotdown.org.mp3", "title": "Buckshot Roulette" },
+    { "file": "Buckshot Roulette - Aura Version_spotdown.org.mp3", "title": "Buckshot Roulette (Aura)" },
+    { "file": "Buckshot Roulette - Sped Up_spotdown.org.mp3", "title": "Buckshot Roulette (Sped Up)" },
+    { "file": "Buckshot Roulette - Slowed_spotdown.org.mp3", "title": "Buckshot Roulette (Slowed)" },
+    { "file": "Buckshot Roulette - Super Slowed_spotdown.org.mp3", "title": "Buckshot Roulette (Super Slowed)" },
+    { "file": "Buckshot Roulette - Ultra Slowed_spotdown.org.mp3", "title": "Buckshot Roulette (Ultra Slowed)" }
   ]
 }
