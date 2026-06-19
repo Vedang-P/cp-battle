@@ -40,6 +40,37 @@ export async function incrementAndCheckBudget(userId: string): Promise<{
   return { count, allowed: count <= MONTHLY_SUBMISSION_CAP };
 }
 
+/** Check budget without incrementing. Returns current count and whether allowed. */
+export async function checkBudget(userId: string): Promise<{
+  count: number;
+  allowed: boolean;
+}> {
+  const now = new Date();
+  const monthKey = `budget:${userId}:${now.getUTCFullYear()}:${now.getUTCMonth()}`;
+  const count = await redis.get(monthKey);
+  const numCount = Number(count) || 0;
+  return { count: numCount, allowed: numCount < MONTHLY_SUBMISSION_CAP };
+}
+
+/** Increment budget counter (called after successful judge). */
+export async function incrementBudget(userId: string): Promise<number> {
+  const now = new Date();
+  const monthKey = `budget:${userId}:${now.getUTCFullYear()}:${now.getUTCMonth()}`;
+  const lastDay = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59),
+  );
+  const ttlMs = lastDay.getTime() - now.getTime() + 60_000;
+
+  const count = (await redis.eval(
+    INCR_EXPIRE_SCRIPT,
+    1,
+    monthKey,
+    ttlMs,
+  )) as number;
+
+  return count;
+}
+
 export async function getMonthlyCount(userId: string): Promise<number> {
   const now = new Date();
   const monthKey = `budget:${userId}:${now.getUTCFullYear()}:${now.getUTCMonth()}`;

@@ -80,7 +80,19 @@ export async function pickProblemsForMatch(
       where: { difficulty, isVisible: true, id: { notIn: [...matchUsed] } },
       select: { id: true },
     });
-    if (fallbacks.length === 0) throw new Error(`No visible ${difficulty} problem available`);
+    if (fallbacks.length === 0) {
+      // Last resort: try any difficulty
+      const anyDifficulty = await db.problem.findMany({
+        where: { isVisible: true, id: { notIn: [...matchUsed] } },
+        select: { id: true },
+      });
+      if (anyDifficulty.length === 0) {
+        throw new Error('No visible problems available for match creation');
+      }
+      const chosen = anyDifficulty[Math.floor(Math.random() * anyDifficulty.length)]!;
+      matchUsed.add(chosen.id);
+      return chosen.id;
+    }
     const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
     exclude.add(chosen.id);
     matchUsed.add(chosen.id);
@@ -110,12 +122,15 @@ export async function pickProblemsForMatch(
 
 /**
  * Pick 3 problems for practice mode.
- * Each slot is randomly assigned EASY or MEDIUM difficulty.
+ * Uses the difficulty parameter to bias problem selection:
+ * - EASY: 70% EASY, 30% MEDIUM
+ * - MEDIUM: 30% EASY, 70% MEDIUM
+ * - HARD: 0% EASY, 50% MEDIUM, 50% HARD (if HARD problems exist)
  */
 async function pickPracticeProblems(
   playerAId: string,
   playerBId: string,
-  _difficulty: Difficulty,
+  difficulty: Difficulty,
 ): Promise<string[]> {
   const recent = await db.match.findMany({
     where: {
@@ -137,8 +152,29 @@ async function pickPracticeProblems(
   const matchUsed = new Set<string>();
   const sequence: string[] = [];
 
+  // Build difficulty distribution based on requested difficulty
+  const difficulties: Array<'EASY' | 'MEDIUM' | 'HARD'> = [];
+  if (difficulty === 'EASY') {
+    // 70% EASY, 30% MEDIUM
+    difficulties.push('EASY', 'EASY', 'MEDIUM');
+  } else if (difficulty === 'MEDIUM') {
+    // 30% EASY, 70% MEDIUM
+    difficulties.push('EASY', 'MEDIUM', 'MEDIUM');
+  } else {
+    // HARD: 0% EASY, 50% MEDIUM, 50% HARD
+    difficulties.push('MEDIUM', 'MEDIUM', 'HARD');
+  }
+  shuffle(difficulties);
+
   for (let i = 0; i < 3; i++) {
-    const diff = randomDifficulty();
+    let diff = difficulties[i] ?? 'MEDIUM';
+
+    // Fallback: if HARD problems don't exist, use MEDIUM
+    if (diff === 'HARD') {
+      const hardCount = await db.problem.count({ where: { difficulty: 'HARD', isVisible: true } });
+      if (hardCount === 0) diff = 'MEDIUM';
+    }
+
     const candidates = await db.problem.findMany({
       where: { difficulty: diff, isVisible: true, id: { notIn: [...used] } },
       select: { id: true },
@@ -149,11 +185,12 @@ async function pickPracticeProblems(
       matchUsed.add(chosen.id);
       sequence.push(chosen.id);
     } else {
+      // Fallback: try any difficulty
       const fallbacks = await db.problem.findMany({
-        where: { difficulty: diff, isVisible: true, id: { notIn: [...matchUsed] } },
+        where: { isVisible: true, id: { notIn: [...matchUsed] } },
         select: { id: true },
       });
-      if (fallbacks.length === 0) throw new Error(`No visible ${diff} problem available`);
+      if (fallbacks.length === 0) throw new Error('No visible problems available');
       const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
       matchUsed.add(chosen.id);
       sequence.push(chosen.id);

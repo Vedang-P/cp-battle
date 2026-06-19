@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const RATE_LIMIT_KEY = 'ratelimit:login:';
-const MAX_ATTEMPTS = 50;
+const MAX_ATTEMPTS = 20; // generous for shared nginx IP, prevents brute force
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 const INCR_EXPIRE_SCRIPT = `

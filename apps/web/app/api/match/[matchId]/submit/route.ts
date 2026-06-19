@@ -9,7 +9,7 @@ import { finalizeMatch } from '@zapdos/match';
 import { emitToMatch, emitToUser } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@zapdos/realtime';
 import { checkRateLimit } from '@/lib/rate-limit';
-import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
+import { checkBudget, incrementBudget, budgetExceededResponse } from '@/lib/budget';
 import { withJudgeConcurrency } from '@/lib/judge-limiter';
 
 export const dynamic = 'force-dynamic';
@@ -65,8 +65,9 @@ export async function POST(
     }
 
     // Monthly budget check (1000 submissions/month cap)
-    const { allowed } = await incrementAndCheckBudget(user.id);
-    if (!allowed) {
+    // Check budget BEFORE judging to prevent abuse
+    const budgetCheck = await checkBudget(user.id);
+    if (!budgetCheck.allowed) {
       return budgetExceededResponse();
     }
 
@@ -105,6 +106,11 @@ export async function POST(
 
     if (match.status !== 'IN_PROGRESS') {
       return NextResponse.json({ error: 'Match is not in progress' }, { status: 409 });
+    }
+
+    // Validate problemId is in this match's problem sequence
+    if (!match.problemSequence.includes(problemId)) {
+      return NextResponse.json({ error: 'Problem not in this match' }, { status: 400 });
     }
 
     // Verify the problem is unlocked for this user
@@ -189,6 +195,9 @@ export async function POST(
     if (!result) {
       return NextResponse.json({ error: 'Judge returned no result' }, { status: 500 });
     }
+
+    // Increment budget only after successful judge result
+    await incrementBudget(user.id);
 
     // Update submission and progress atomically after judging
     const postJudgeResult = await db.$transaction(async (tx) => {

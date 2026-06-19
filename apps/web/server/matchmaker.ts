@@ -52,20 +52,25 @@ async function emitSocketEvent(room: string, event: string, payload: unknown): P
   }
 }
 
-/** Acquire a distributed lock for the matchmaking pipeline. */
-async function acquireLock(): Promise<boolean> {
-  const result = await redis.set(QUEUE_LOCK_KEY, 'locked', 'PX', LOCK_TTL_MS, 'NX');
-  return result === 'OK';
+/** Acquire a distributed lock for the matchmaking pipeline. Returns lock value if acquired. */
+async function acquireLock(): Promise<string | null> {
+  const lockValue = `${process.pid}-${Date.now()}`;
+  const result = await redis.set(QUEUE_LOCK_KEY, lockValue, 'PX', LOCK_TTL_MS, 'NX');
+  return result === 'OK' ? lockValue : null;
 }
 
-/** Release the lock. */
-async function releaseLock(): Promise<void> {
-  await redis.del(QUEUE_LOCK_KEY);
+/** Release the lock only if we still hold it. */
+async function releaseLock(lockValue: string): Promise<void> {
+  const current = await redis.get(QUEUE_LOCK_KEY);
+  if (current === lockValue) {
+    await redis.del(QUEUE_LOCK_KEY);
+  }
 }
 
 async function poll(): Promise<void> {
   // Acquire lock to prevent double-pairing across instances
-  if (!(await acquireLock())) return;
+  const lockValue = await acquireLock();
+  if (!lockValue) return;
 
   try {
     const pair = await findPair(redisCompat, Date.now());
@@ -174,7 +179,7 @@ async function poll(): Promise<void> {
   } catch (err) {
     console.error('[matchmaker] Error:', err);
   } finally {
-    await releaseLock();
+    await releaseLock(lockValue);
   }
 }
 

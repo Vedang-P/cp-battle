@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "scrape-problems": "tsx --env-file=../../.env scripts/scrape-problems.ts",
     "import-codeforces": "tsx --env-file=../../.env scripts/import-codeforces.ts",
-    "validate-problems": "tsx --env-file=../../.env scripts/validate-problems.ts"
+    "validate-problems": "tsx --env-file=../../.env scripts/validate-problems.ts",
+    "wipe-user-data": "tsx --env-file=../../.env scripts/wipe-user-data.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.0.0",

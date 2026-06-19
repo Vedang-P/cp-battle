@@ -183,17 +183,46 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`[realtime] ${socket.id} left match ${matchId}`);
   });
 
-  socket.on('match:forfeit', (matchId) => {
-    // Forward the forfeit to the match API via HTTP POST
-    const appUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
-    fetch(`${appUrl}/api/match/${matchId}/forfeit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: socket.userId }),
-    }).catch((err) => {
+  socket.on('match:forfeit', async (matchId) => {
+    try {
+      // Verify the user is a participant in this match
+      const match = await db.match.findUnique({
+        where: { id: matchId },
+        select: { playerAId: true, playerBId: true, status: true },
+      });
+      if (!match || match.status !== 'IN_PROGRESS') return;
+      if (match.playerAId !== socket.userId && match.playerBId !== socket.userId) return;
+
+      // Determine the winner (the opponent of the forfeiter)
+      const opponentId = socket.userId === match.playerAId ? match.playerBId : match.playerAId;
+
+      // Import and call finalizeMatch directly (no HTTP request needed)
+      const { finalizeMatch } = await import('@zapdos/match');
+      const { emitSocketEvent } = await import('../lib/socket');
+      const { matchRoom } = await import('@zapdos/realtime');
+
+      const result = await finalizeMatch({ matchId, reason: 'forfeit', forfeiterId: socket.userId });
+
+      // Emit match:end to both players
+      const matchData = await db.match.findUnique({ where: { id: matchId } });
+      if (matchData) {
+        const endPayload = {
+          matchId,
+          status: 'COMPLETED',
+          winnerId: matchData.winnerId,
+          scoreA: matchData.scoreA,
+          scoreB: matchData.scoreB,
+          eloDeltaA: matchData.eloDeltaA,
+          eloDeltaB: matchData.eloDeltaB,
+          reason: 'forfeit',
+        };
+        await emitSocketEvent(matchRoom(matchId), 'match:end', endPayload);
+      }
+
+      console.log(`[realtime] ${socket.id} forfeited match ${matchId}`);
+    } catch (err) {
       console.error(`[realtime] forfeit failed for match ${matchId}:`, err);
-    });
-    console.log(`[realtime] ${socket.id} forfeited match ${matchId}`);
+    }
   });
 
   socket.on('match:heartbeat', (matchId) => {

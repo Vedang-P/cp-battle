@@ -48,5 +48,8 @@ COPY --from=builder /app ./
 
 EXPOSE 3000 3002
 
+# Run as non-root user for security
+USER node
+
 # Default: Next.js production server.
 CMD ["pnpm", "--filter", "web", "start"]

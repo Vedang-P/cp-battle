@@ -35,21 +35,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Already in a match' }, { status: 409 });
     }
 
-    // Find or create bot user
-    let bot = await db.user.findUnique({ where: { email: BOT_EMAIL } });
-    if (!bot) {
-      // Auto-create bot if seed hasn't been run
-      const { createHash } = await import('crypto');
-      const pw = createHash('sha256').update('zap-bot-auto-' + Date.now()).digest('hex');
-      bot = await db.user.create({
-        data: {
-          email: BOT_EMAIL,
-          username: BOT_USERNAME,
-          passwordHash: pw,
-          elo: 1200,
-        },
-      });
-    }
+    // Find or create bot user (upsert to avoid race condition)
+    const bot = await db.user.upsert({
+      where: { email: BOT_EMAIL },
+      create: {
+        email: BOT_EMAIL,
+        username: BOT_USERNAME,
+        elo: 1200,
+      },
+      update: {},
+    });
 
     // Create match with bot as playerB — pass difficulty for problem selection
     const diffEnum = difficulty as Difficulty;
