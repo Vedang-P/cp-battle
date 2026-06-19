@@ -1,97 +1,80 @@
 /**
- * Convert LaTeX-style math in markdown to readable Unicode text.
+ * Render LaTeX math expressions in markdown to HTML using KaTeX.
  *
- * CSES problems use $...$ for inline math with commands like \le, \ge, \times.
- * Instead of adding heavy KaTeX, we convert to readable Unicode.
+ * Handles:
+ * - Display math: $$$...$$$
+ * - Inline math: $...$
+ * - Bare LaTeX commands outside delimiters (fallback to Unicode)
  */
 
-const LATEX_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/\$\\le\$/g, '≤'],
-  [/\$\\ge\$/g, '≥'],
-  [/\$\\ne\$/g, '≠'],
-  [/\$\\leq\$/g, '≤'],
-  [/\$\\geq\$/g, '≥'],
-  [/\$\\neq\$/g, '≠'],
-  [/\$\\times\$/g, '×'],
-  [/\$\\div\$/g, '÷'],
-  [/\$\\pm\$/g, '±'],
-  [/\$\\infty\$/g, '∞'],
-  [/\$\\dots\$/g, '...'],
-  [/\$\\cdots\$/g, '···'],
-  [/\$\\rightarrow\$/g, '→'],
-  [/\$\\leftarrow\$/g, '←'],
-  [/\$\\Rightarrow\$/g, '⇒'],
-  [/\$\\Leftarrow\$/g, '⇐'],
-  [/\$\\le 10\^\{(\d+)\}\$/g, '≤ 10^$1'],
-  [/\$\\ge 10\^\{(\d+)\}\$/g, '≥ 10^$1'],
+import katex from 'katex';
+
+// Fallback Unicode replacements for bare LaTeX commands outside $ delimiters
+const BARE_LATEX_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\\leq?\b/g, '≤'],
+  [/\\geq?\b/g, '≥'],
+  [/\\neq?\b/g, '≠'],
+  [/\\times/g, '×'],
+  [/\\div/g, '÷'],
+  [/\\pm/g, '±'],
+  [/\\infty/g, '∞'],
+  [/\\dots/g, '...'],
+  [/\\cdots/g, '···'],
+  [/\\cdot/g, '·'],
+  [/\\rightarrow/g, '→'],
+  [/\\leftarrow/g, '←'],
+  [/\\Rightarrow/g, '⇒'],
+  [/\\Leftarrow/g, '⇐'],
 ];
 
 /**
- * Process inline math: $expr$ → readable text.
- * Handles $n$, $10^6$, $1 \le n \le 10^6$, etc.
+ * Try to render a LaTeX string with KaTeX. Returns HTML string.
+ * Falls back to escaped code on error.
+ */
+function renderKatex(tex: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(tex, {
+      displayMode,
+      throwOnError: false,
+      trust: true,
+      strict: false,
+    });
+  } catch {
+    return `<code class="katex-fallback">${tex.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
+  }
+}
+
+/**
+ * Render LaTeX math in markdown to HTML.
+ * Exported as `renderMath` for backward compatibility.
  */
 export function renderMath(md: string): string {
   let result = md;
 
-  // Apply specific known replacements first
-  for (const [pattern, replacement] of LATEX_REPLACEMENTS) {
+  // 1. Display math: $$$...$$$ → KaTeX block
+  result = result.replace(/\$\$\$(.+?)\$\$\$/gs, (_, tex) => {
+    return renderKatex(tex.trim(), true);
+  });
+
+  // 2. Inline math: $...$ → KaTeX inline
+  //    Must not match $$ (display) or $ in URLs/paths
+  result = result.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (_, tex) => {
+    return renderKatex(tex.trim(), false);
+  });
+
+  // 3. Bare LaTeX commands outside delimiters (constraint lines, etc.)
+  //    Only convert simple commands, leave complex ones alone
+  for (const [pattern, replacement] of BARE_LATEX_REPLACEMENTS) {
     result = result.replace(pattern, replacement);
   }
 
-  // Generic: strip $ delimiters and convert remaining LaTeX commands
-  result = result.replace(/\$([^$]+)\$/g, (_, content) => {
-    return content
-      .replace(/\\le/g, '≤')
-      .replace(/\\ge/g, '≥')
-      .replace(/\\ne/g, '≠')
-      .replace(/\\leq/g, '≤')
-      .replace(/\\geq/g, '≥')
-      .replace(/\\neq/g, '≠')
-      .replace(/\\times/g, '×')
-      .replace(/\\div/g, '÷')
-      .replace(/\\pm/g, '±')
-      .replace(/\\infty/g, '∞')
-      .replace(/\\dots/g, '...')
-      .replace(/\\cdots/g, '···')
-      .replace(/\\rightarrow/g, '→')
-      .replace(/\\leftarrow/g, '←')
-      .replace(/\\Rightarrow/g, '⇒')
-      .replace(/\\Leftarrow/g, '⇐')
-      .replace(/\\le /g, '≤ ')
-      .replace(/\\ge /g, '≥ ')
-      .replace(/\\ne /g, '≠ ')
-      .replace(/\\cdot/g, '·')
-      .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
-      .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
-      .replace(/10\^\{(\d+)\}/g, '10^$1')
-      .replace(/2\^\{(\d+)\}/g, '2^$1')
-      .replace(/\\(|\\)/g, '')
-      .replace(/\\,/g, ' ')
-      .replace(/\\;/g, ' ');
+  // 4. Convert \( \) and \[ \] delimiters to KaTeX
+  result = result.replace(/\\\((.+?)\\\)/g, (_, tex) => {
+    return renderKatex(tex.trim(), false);
   });
-
-  // Also convert bare LaTeX commands outside $ delimiters (used in constraint lines)
-  result = result
-    .replace(/\\leq?\b/g, '≤')
-    .replace(/\\geq?\b/g, '≥')
-    .replace(/\\neq?\b/g, '≠')
-    .replace(/\\times/g, '×')
-    .replace(/\\div/g, '÷')
-    .replace(/\\pm/g, '±')
-    .replace(/\\infty/g, '∞')
-    .replace(/\\dots/g, '...')
-    .replace(/\\cdots/g, '···')
-    .replace(/\\cdot/g, '·')
-    .replace(/\\rightarrow/g, '→')
-    .replace(/\\leftarrow/g, '←')
-    .replace(/\\Rightarrow/g, '⇒')
-    .replace(/\\Leftarrow/g, '⇐')
-    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
-    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
-    .replace(/10\^\{(\d+)\}/g, '10^$1')
-    .replace(/10\^(\d+)/g, '10^$1')
-    .replace(/2\^\{(\d+)\}/g, '2^$1')
-    .replace(/2\^(\d+)/g, '2^$1');
+  result = result.replace(/\\\[(.+?)\\\]/gs, (_, tex) => {
+    return renderKatex(tex.trim(), true);
+  });
 
   return result;
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
+import 'katex/dist/katex.min.css';
 import { Navbar } from '@/components/Navbar';
 import { Providers } from '@/components/Providers';
 
