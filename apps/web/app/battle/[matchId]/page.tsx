@@ -16,6 +16,7 @@ import { EditorPanel } from '@/components/battle/EditorPanel';
 import { OutputPanel } from '@/components/battle/OutputPanel';
 import { MatchEndScreen } from '@/components/battle/MatchEndScreen';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { ConfirmModal } from '@/components/battle/ConfirmModal';
 import {
   resumeAudio,
   playJudged,
@@ -91,6 +92,7 @@ export default function BattlePage({ params }: Props) {
   const [loading, setLoading] = useState(true);
   const [matchMeta, setMatchMeta] = useState<MatchMeta | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showForfeitModal, setShowForfeitModal] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const userId = session?.user?.id ?? '';
@@ -338,8 +340,6 @@ export default function BattlePage({ params }: Props) {
         }),
       });
       const data = await res.json();
-      // Use the server's verdict if present — don't override with 'ERROR'
-      // just because data.error exists (CE verdicts include an error message).
       if (data.verdict) {
         setVerdict({
           verdict: data.verdict,
@@ -349,12 +349,14 @@ export default function BattlePage({ params }: Props) {
           timeMs: data.timeMs ?? undefined,
           memoryKb: data.memoryKb ?? undefined,
         });
+      } else if (data.error) {
+        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
       } else {
-        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error ?? 'Unknown error' });
+        setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Unknown error' });
       }
       setIsSubmitting(false);
     } catch {
-      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
+      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed. Check your connection.' });
       setIsSubmitting(false);
     }
   }, [currentProblem, isSubmitting, matchId, language, code]);
@@ -377,8 +379,6 @@ export default function BattlePage({ params }: Props) {
       });
       const data = await res.json();
       if (data.verdict) {
-        // For SUBMIT mode, verdict usually arrives via socket. But if the
-        // server returns it inline (e.g., CE, judge error), show it immediately.
         setVerdict({
           verdict: data.verdict,
           passed: data.passed ?? 0,
@@ -388,20 +388,20 @@ export default function BattlePage({ params }: Props) {
           memoryKb: data.memoryKb ?? undefined,
         });
         setIsSubmitting(false);
-      } else if (data.error && !data.verdict) {
+      } else if (data.error) {
         setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: data.error });
         setIsSubmitting(false);
+      } else {
+        setIsSubmitting(false);
       }
-      // For AC submissions, the verdict arrives via socket (submission:verdict)
-      // which will reset isSubmitting.
     } catch {
-      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed' });
+      setVerdict({ verdict: 'ERROR', passed: 0, total: 0, error: 'Request failed. Check your connection.' });
       setIsSubmitting(false);
     }
   }, [currentProblem, isSubmitting, matchId, language, code]);
 
   const handleForfeit = useCallback(async () => {
-    if (!confirm('Forfeit this match? This counts as a loss.')) return;
+    setShowForfeitModal(false);
     try {
       await fetch(`/api/match/${matchId}/forfeit`, {
         method: 'POST',
@@ -491,7 +491,7 @@ export default function BattlePage({ params }: Props) {
         timeWarning={timeWarning}
         isPractice={matchMeta?.isPractice ?? false}
         onSwitchProblem={setActiveProblem}
-        onForfeit={handleForfeit}
+        onForfeit={() => setShowForfeitModal(true)}
       />
       <div className="flex min-h-0 flex-1 flex-row max-md:flex-col">
         <ProblemPanel problem={currentProblem} />
@@ -513,6 +513,15 @@ export default function BattlePage({ params }: Props) {
         problem={currentProblem}
         language={language}
       />
+      {showForfeitModal && (
+        <ConfirmModal
+          title="forfeit.sh"
+          message="Forfeit this match? This counts as a loss."
+          confirmLabel="> confirm forfeit"
+          onConfirm={handleForfeit}
+          onCancel={() => setShowForfeitModal(false)}
+        />
+      )}
     </main>
   );
 }

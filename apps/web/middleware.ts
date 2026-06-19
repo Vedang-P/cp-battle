@@ -23,7 +23,8 @@ export function middleware(request: NextRequest) {
   if (EXEMPT_ROUTES.test(pathname)) {
     // 1. Session cookie presence check
     const sessionToken = request.cookies.get('next-auth.session-token')?.value
-      ?? request.cookies.get('__Secure-next-auth.session-token')?.value;
+      ?? request.cookies.get('__Secure-next-auth.session-token')?.value
+      ?? request.cookies.get('__Host-next-auth.session-token')?.value;
     if (!sessionToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
