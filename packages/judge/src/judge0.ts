@@ -179,10 +179,10 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     stack_limit: 128000,
     max_file_size: 4096,
     enable_network: false,
-    // Per-process limits (avoids --cg cgroup flag which doesn't work on
-    // macOS Docker Desktop). On real Linux (EC2) this works perfectly.
     enable_per_process_and_thread_time_limit: true,
-    enable_per_process_and_thread_memory_limit: true,
+    // Java's JVM cannot allocate its heap when per-process memory limits are
+    // enforced via ulimit (cgroups disabled on Judge0 CE). Disable for Java.
+    enable_per_process_and_thread_memory_limit: language.id !== 'java',
   };
 
   if (compilerOptions) {
