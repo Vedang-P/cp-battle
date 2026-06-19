@@ -173,8 +173,8 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     cpu_time_limit: Math.max(1, Math.round(cpuTimeLimitMs / 1000)),
     cpu_extra_time: 1,
     wall_time_limit: Math.max(5, Math.round(cpuTimeLimitMs / 1000) + 5),
-    // Use at least 512MB — g++ under Rosetta needs more virtual memory to compile.
-    memory_limit: Math.max(memoryLimitMb * 1024, 512000), // Judge0 CE max is 512000 KB
+    // Use at least 512MB for compilation, but cap at Judge0 CE max (512000 KB).
+    memory_limit: Math.min(Math.max(memoryLimitMb * 1024, 512000), 512000),
     stack_limit: 128000,
     max_file_size: 4096,
     enable_network: false,
