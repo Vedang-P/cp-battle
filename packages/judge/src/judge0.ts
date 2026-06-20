@@ -204,9 +204,14 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
   const compilerOptions =
     language.id === 'cpp' ? '-O2 -std=c++17' : undefined;
 
+  // IMPORTANT: wait=false (async submit + poll). Synchronous wait=true mode is
+  // unreliable on this Judge0 deployment — it intermittently holds the HTTP
+  // connection open indefinitely instead of returning, which then trips our
+  // abort timer and surfaces a CORRECT solution as a false TLE. Async submit +
+  // GET-poll is Judge0's recommended production pattern and is rock-solid here.
   const params = new URLSearchParams({
     base64_encoded: 'true',
-    wait: 'true',
+    wait: 'false',
   });
 
   // CPU limit as a float (Judge0 accepts decimals) — avoids the lossy
@@ -229,10 +234,14 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     stack_limit: 128000,
     max_file_size: 4096,
     enable_network: false,
-    enable_per_process_and_thread_time_limit: true,
-    // Java's JVM cannot allocate its heap when per-process memory limits are
-    // enforced via ulimit (cgroups disabled on Judge0 CE). Disable for Java.
-    enable_per_process_and_thread_memory_limit: language.id !== 'java',
+    // CRITICAL: keep BOTH per-process limit flags FALSE so isolate runs in
+    // cgroup mode (`isolate --cg ... --cg-mem=...`). The host kernel uses
+    // cgroup v2, on which isolate's non-cgroup `-m` (RLIMIT_AS) path is broken:
+    // it hangs the sandbox and Judge0 records a status-13 Internal Error. We
+    // verified directly against the live server that the per-process path fails
+    // en masse while cgroup mode runs the same code correctly in milliseconds.
+    enable_per_process_and_thread_time_limit: false,
+    enable_per_process_and_thread_memory_limit: false,
   };
 
   if (compilerOptions) {
@@ -251,39 +260,57 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
   const timer = setTimeout(() => controller.abort(), httpTimeout);
 
   try {
-    // Submit the code
-    const res = await fetch(`${JUDGE0_URL}/submissions?${params}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getJudge0Headers(),
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    // Up to 2 attempts: a transient Judge0 status-13 Internal Error (rare in
+    // cgroup mode, but possible under heavy isolate-box contention) is retried
+    // once before we give up, rather than letting it corrupt a verdict.
+    let lastInternalError: Judge0SubmissionResponse | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Submit the code (async — returns a token immediately).
+      const res = await fetch(`${JUDGE0_URL}/submissions?${params}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getJudge0Headers(),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Judge0 HTTP ${res.status}: ${text}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Judge0 HTTP ${res.status}: ${text}`);
+      }
+
+      const data = await res.json();
+
+      // Async mode returns {token}. (If a future server honours wait=true and
+      // returns a full result inline, use it directly.)
+      let resultData: Judge0SubmissionResponse;
+      if (data.token && !data.status) {
+        resultData = await pollForResult(data.token, controller.signal);
+      } else {
+        resultData = data as Judge0SubmissionResponse;
+      }
+
+      // Judge0 returns an error object instead of status when something is wrong
+      if ('error' in resultData) {
+        throw new Error(`Judge0 error: ${(resultData as unknown as Judge0ErrorResponse).error}`);
+      }
+
+      // Status 13 = Internal Error (isolate failed). Retry once; if it persists,
+      // surface it as an error so the caller reports a judge fault, NOT a TLE/WA.
+      if (resultData.status?.id === Judge0Status.INTERNAL_ERROR) {
+        lastInternalError = resultData;
+        continue;
+      }
+
+      return mapJudge0ToPistonResult(resultData);
     }
 
-    const data = await res.json();
-
-    // If wait=true isn't supported, Judge0 returns {token: "..."}.
-    // We need to poll for the result.
-    let resultData: Judge0SubmissionResponse;
-    if (data.token && !data.status) {
-      resultData = await pollForResult(data.token, controller.signal);
-    } else {
-      resultData = data as Judge0SubmissionResponse;
-    }
-
-    // Judge0 returns an error object instead of status when something is wrong
-    if ('error' in resultData) {
-      throw new Error(`Judge0 error: ${(resultData as unknown as Judge0ErrorResponse).error}`);
-    }
-
-    return mapJudge0ToPistonResult(resultData);
+    const detail = lastInternalError?.message
+      ? decodeBase64(lastInternalError.message)
+      : 'unknown';
+    throw new Error(`Judge0 internal error (status 13) after retry: ${detail}`);
   } catch (err) {
     // Map AbortError to TLE so the submission route shows TLE instead of CE
     if (err instanceof Error && err.name === 'AbortError') {
