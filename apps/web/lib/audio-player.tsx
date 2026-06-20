@@ -58,9 +58,9 @@ function getAudio(): HTMLAudioElement {
 
 /** Read saved mute preference synchronously (safe for SSR since window check guards it). */
 function getInitialMuted(): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined') return false;
   const saved = localStorage.getItem(STORAGE_KEY_MUTED);
-  return saved !== null ? saved === 'true' : true;
+  return saved !== null ? saved === 'true' : false;
 }
 
 /** Read saved volume preference synchronously. */
@@ -106,6 +106,19 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           if (!singletonHasSetSrc) {
             audio.src = `/audio/music/${data.tracks[0].file}`;
             singletonHasSetSrc = true;
+
+            // Attempt autoplay. Browsers block autoplay without a prior user gesture;
+            // if it fails, attach a one-shot interaction listener so playback starts
+            // on the very first click/keypress instead of requiring the toggle button.
+            if (!isMutedRef.current) {
+              audio.play().catch(() => {
+                const startOnInteraction = () => {
+                  if (!isMutedRef.current) audio.play().catch(() => {});
+                };
+                document.addEventListener('click', startOnInteraction, { once: true });
+                document.addEventListener('keydown', startOnInteraction, { once: true });
+              });
+            }
           }
 
           // Wire up ended handler (once)
