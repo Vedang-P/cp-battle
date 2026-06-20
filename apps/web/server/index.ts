@@ -112,6 +112,72 @@ io.adapter(createAdapter(pubClient, subClient));
 const matchSockets = new Map<string, Set<string>>();
 const socketMatches = new Map<string, string>();
 
+// Disconnect → auto-forfeit. When a player's LAST socket for a match drops, we
+// start a grace timer; if they don't reconnect within it, the opponent wins by
+// forfeit instead of waiting out the full match clock.
+const socketUser = new Map<string, string>(); // socketId -> userId
+const forfeitTimers = new Map<string, NodeJS.Timeout>(); // `${matchId}:${userId}` -> timer
+const DISCONNECT_FORFEIT_GRACE_MS = Number(process.env.DISCONNECT_FORFEIT_GRACE_MS ?? 30_000);
+
+function userHasSocketInMatch(matchId: string, userId: string): boolean {
+  const sockets = matchSockets.get(matchId);
+  if (!sockets) return false;
+  for (const sid of sockets) {
+    if (socketUser.get(sid) === userId) return true;
+  }
+  return false;
+}
+
+function cancelForfeit(matchId: string, userId: string): void {
+  const key = `${matchId}:${userId}`;
+  const timer = forfeitTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    forfeitTimers.delete(key);
+  }
+}
+
+function scheduleForfeit(matchId: string, userId: string): void {
+  const key = `${matchId}:${userId}`;
+  if (forfeitTimers.has(key)) return; // already pending
+  const timer = setTimeout(async () => {
+    forfeitTimers.delete(key);
+    try {
+      // Reconnected during the grace window? Then don't forfeit.
+      if (userHasSocketInMatch(matchId, userId)) return;
+      const match = await db.match.findUnique({
+        where: { id: matchId },
+        select: { status: true, playerAId: true, playerBId: true },
+      });
+      // No-op if the match already ended (finalizeMatch is idempotent anyway).
+      if (!match || match.status !== 'IN_PROGRESS') return;
+      if (match.playerAId !== userId && match.playerBId !== userId) return;
+
+      const { finalizeMatch } = await import('@zapdos/match');
+      const { emitSocketEvent } = await import('../lib/socket');
+      await finalizeMatch({ matchId, reason: 'disconnect', forfeiterId: userId });
+
+      const matchData = await db.match.findUnique({ where: { id: matchId } });
+      if (matchData) {
+        await emitSocketEvent(matchRoom(matchId), 'match:end', {
+          matchId,
+          status: 'COMPLETED',
+          winnerId: matchData.winnerId,
+          scoreA: matchData.scoreA,
+          scoreB: matchData.scoreB,
+          eloDeltaA: matchData.eloDeltaA,
+          eloDeltaB: matchData.eloDeltaB,
+          reason: 'disconnect',
+        });
+      }
+      console.log(`[realtime] auto-forfeit: ${userId} disconnected from ${matchId}`);
+    } catch (err) {
+      console.error(`[realtime] auto-forfeit failed for ${matchId}/${userId}:`, err);
+    }
+  }, DISCONNECT_FORFEIT_GRACE_MS);
+  forfeitTimers.set(key, timer);
+}
+
 /** Verify a NextAuth-style JWT (HMAC-SHA256) using only Node crypto. */
 function verifyJwt(token: string, secret: string): { userId: string; username?: string } | null {
   try {
@@ -156,6 +222,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
   // Join the user's personal room so emitToUser() events reach them
   if (socket.userId) {
     void socket.join(userRoom(socket.userId));
+    socketUser.set(socket.id, socket.userId);
   }
 
   socket.on('match:join', (matchId, ack) => {
@@ -170,6 +237,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         if (!matchSockets.has(matchId)) matchSockets.set(matchId, new Set());
         matchSockets.get(matchId)!.add(socket.id);
         socketMatches.set(socket.id, matchId);
+        if (socket.userId) {
+          socketUser.set(socket.id, socket.userId);
+          cancelForfeit(matchId, socket.userId); // (re)connected → cancel any pending forfeit
+        }
         console.log(`[realtime] ${socket.id} joined match ${matchId}`);
         ack?.(true);
       })
@@ -246,10 +317,16 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 
   socket.on('disconnect', () => {
     const matchId = socketMatches.get(socket.id);
+    const userId = socket.userId;
     if (matchId) {
       matchSockets.get(matchId)?.delete(socket.id);
       socketMatches.delete(socket.id);
+      // If this was the user's last socket in the match, start the grace timer.
+      if (userId && !userHasSocketInMatch(matchId, userId)) {
+        scheduleForfeit(matchId, userId);
+      }
     }
+    socketUser.delete(socket.id);
     console.log(`[realtime] disconnect ${socket.id}`);
   });
 });

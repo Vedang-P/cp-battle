@@ -20,7 +20,10 @@ import { createHmac } from 'node:crypto';
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
 const POLL_INTERVAL_MS = 2000;
-const LOCK_TTL_MS = 5000; // 5 seconds — enough for findPair + dequeue + createMatch
+// Generous enough to cover findPair + dequeue + createMatch even under DB load.
+// createMatch's problem selection was an N+1; it's now batched, but we keep a
+// wide margin so the lock can't expire mid-pipeline and allow a double-pair.
+const LOCK_TTL_MS = 15000;
 const REALTIME_URL = process.env.REALTIME_URL ?? 'http://localhost:3002';
 const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? '';
 

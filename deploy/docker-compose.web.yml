@@ -3,6 +3,12 @@
 #
 # Usage (on the web VM, from the repo root):
 #   docker compose --env-file .env.production -f deploy/docker-compose.web.yml up -d
+#
+# mem_limit on every service: the VM is e2-medium (4GB) running 8 containers,
+# so a single runaway (e.g. a judge fan-out or a leak) must not OOM the whole
+# box. A container that hits its limit is OOM-killed and restarted in isolation.
+# Budget (~3GB, leaving headroom for the OS): pg 512 + redis 256 + web 1024 +
+# realtime 384 + 3 workers 256 each + nginx 64.
 
 name: zapdos-web
 
@@ -10,6 +16,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -25,6 +32,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    mem_limit: 256m
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis-data:/data
@@ -37,6 +45,7 @@ services:
   web:
     image: zapdos-web:latest
     restart: unless-stopped
+    mem_limit: 1024m
     env_file: ../.env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
@@ -52,6 +61,7 @@ services:
   realtime:
     image: zapdos-web:latest
     restart: unless-stopped
+    mem_limit: 384m
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/index.ts"]
     env_file: ../.env.production
     environment:
@@ -66,6 +76,7 @@ services:
   matchmaker:
     image: zapdos-web:latest
     restart: unless-stopped
+    mem_limit: 256m
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/matchmaker.ts"]
     env_file: ../.env.production
     environment:
@@ -79,6 +90,7 @@ services:
   finalizer:
     image: zapdos-web:latest
     restart: unless-stopped
+    mem_limit: 256m
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/finalizer.ts"]
     env_file: ../.env.production
     environment:
@@ -92,6 +104,7 @@ services:
   bot:
     image: zapdos-web:latest
     restart: unless-stopped
+    mem_limit: 256m
     command: ["./apps/web/node_modules/.bin/tsx", "apps/web/server/bot-worker.ts"]
     env_file: ../.env.production
     environment:
@@ -105,6 +118,7 @@ services:
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    mem_limit: 64m
     ports:
       - "80:80"
     volumes:

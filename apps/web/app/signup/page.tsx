@@ -210,7 +210,7 @@ export default function SignUpPage() {
                 minLength={8}
                 className="input font-mono"
                 autoComplete="new-password"
-                placeholder="min 8 chars"
+                placeholder="8+ chars, 1 letter + 1 number"
               />
               {errors.password && (
                 <p className="mt-1 font-mono text-xs text-error">

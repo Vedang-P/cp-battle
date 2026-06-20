@@ -108,16 +108,28 @@ export async function findPair(redis: RedisLike, nowMs: number): Promise<[string
     entries.push({ userId, elo: score, joinedAtMs: meta.joinedAtMs, mode: meta.mode ?? 'SPRINT' });
   }
 
-  for (let i = 0; i + 1 < entries.length; i++) {
-    const a = entries[i]!;
-    const b = entries[i + 1]!;
-    // Players must have selected the same mode
-    if (a.mode !== b.mode) continue;
-    const waitedA = (nowMs - a.joinedAtMs) / 1000;
-    const waitedB = (nowMs - b.joinedAtMs) / 1000;
-    const gap = Math.abs(a.elo - b.elo);
-    if (gap <= matchmakingWindow(waitedA) && gap <= matchmakingWindow(waitedB)) {
-      return [a.userId, b.userId];
+  // Group by mode FIRST, then pair adjacent within each mode group. Pairing
+  // across the flat ELO-sorted list (checking only neighbours) would miss two
+  // same-mode players who happen to have a different-mode player between them
+  // by rating — they'd never get matched. `entries` is already ELO-sorted, so
+  // each per-mode group stays ELO-sorted too.
+  const byMode = new Map<string, typeof entries>();
+  for (const e of entries) {
+    const group = byMode.get(e.mode);
+    if (group) group.push(e);
+    else byMode.set(e.mode, [e]);
+  }
+
+  for (const group of byMode.values()) {
+    for (let i = 0; i + 1 < group.length; i++) {
+      const a = group[i]!;
+      const b = group[i + 1]!;
+      const waitedA = (nowMs - a.joinedAtMs) / 1000;
+      const waitedB = (nowMs - b.joinedAtMs) / 1000;
+      const gap = Math.abs(a.elo - b.elo);
+      if (gap <= matchmakingWindow(waitedA) && gap <= matchmakingWindow(waitedB)) {
+        return [a.userId, b.userId];
+      }
     }
   }
   return null;

@@ -63,47 +63,34 @@ export async function pickProblemsForMatch(
     for (const id of m.problemSequence) seen.add(id);
   }
 
-  const pick = async (difficulty: 'EASY' | 'MEDIUM', exclude: Set<string>, matchUsed: Set<string>): Promise<string> => {
-    // Fetch all candidates and pick one at random
-    const candidates = await db.problem.findMany({
-      where: { difficulty, isVisible: true, id: { notIn: [...exclude] } },
-      select: { id: true },
-    });
-    if (candidates.length > 0) {
-      const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
-      exclude.add(chosen.id);
-      matchUsed.add(chosen.id);
-      return chosen.id;
+  // Fetch the candidate pools ONCE per difficulty, then select in memory.
+  // Previously this ran up to 3 queries PER problem slot (an N+1) while the
+  // matchmaker held its distributed lock.
+  const [easy, medium] = await Promise.all([
+    db.problem.findMany({ where: { difficulty: 'EASY', isVisible: true }, select: { id: true } }),
+    db.problem.findMany({ where: { difficulty: 'MEDIUM', isVisible: true }, select: { id: true } }),
+  ]);
+  const pools: Record<'EASY' | 'MEDIUM', string[]> = {
+    EASY: easy.map((p) => p.id),
+    MEDIUM: medium.map((p) => p.id),
+  };
+  const allIds = [...pools.EASY, ...pools.MEDIUM];
+
+  const matchUsed = new Set<string>();
+  const pickFrom = (difficulty: 'EASY' | 'MEDIUM'): string => {
+    // 1. unseen + unused; 2. unused (ignore "seen"); 3. any difficulty unused.
+    let candidates = pools[difficulty].filter((id) => !seen.has(id) && !matchUsed.has(id));
+    if (candidates.length === 0) candidates = pools[difficulty].filter((id) => !matchUsed.has(id));
+    if (candidates.length === 0) candidates = allIds.filter((id) => !matchUsed.has(id));
+    if (candidates.length === 0) {
+      throw new Error('No visible problems available for match creation');
     }
-    // Fallback: ignore "seen" if we've exhausted the pool
-    const fallbacks = await db.problem.findMany({
-      where: { difficulty, isVisible: true, id: { notIn: [...matchUsed] } },
-      select: { id: true },
-    });
-    if (fallbacks.length === 0) {
-      // Last resort: try any difficulty
-      const anyDifficulty = await db.problem.findMany({
-        where: { isVisible: true, id: { notIn: [...matchUsed] } },
-        select: { id: true },
-      });
-      if (anyDifficulty.length === 0) {
-        throw new Error('No visible problems available for match creation');
-      }
-      const chosen = anyDifficulty[Math.floor(Math.random() * anyDifficulty.length)]!;
-      matchUsed.add(chosen.id);
-      return chosen.id;
-    }
-    const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
-    exclude.add(chosen.id);
-    matchUsed.add(chosen.id);
-    return chosen.id;
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
+    matchUsed.add(chosen);
+    return chosen;
   };
 
-  const used = new Set(seen);
-  const matchUsed = new Set<string>();
-  const sequence: string[] = [];
-
-  // Build difficulty list from mode composition instead of random assignment
+  // Build difficulty list from mode composition (HARD reserved → treat as MEDIUM).
   const difficulties: Array<'EASY' | 'MEDIUM'> = [];
   for (const slot of cfg.composition) {
     const diff = slot.difficulty === 'HARD' ? 'MEDIUM' : slot.difficulty;
@@ -112,9 +99,9 @@ export async function pickProblemsForMatch(
     }
   }
 
+  const sequence: string[] = [];
   for (let i = 0; i < cfg.totalProblems; i++) {
-    const diff = difficulties[i] ?? 'EASY';
-    sequence.push(await pick(diff, used, matchUsed));
+    sequence.push(pickFrom(difficulties[i] ?? 'EASY'));
   }
 
   return shuffle(sequence);
@@ -148,53 +135,46 @@ async function pickPracticeProblems(
     for (const id of m.problemSequence) seen.add(id);
   }
 
-  const used = new Set(seen);
-  const matchUsed = new Set<string>();
-  const sequence: string[] = [];
+  // Fetch all pools once (was a query per slot, plus a HARD count per slot).
+  const [easy, medium, hard] = await Promise.all([
+    db.problem.findMany({ where: { difficulty: 'EASY', isVisible: true }, select: { id: true } }),
+    db.problem.findMany({ where: { difficulty: 'MEDIUM', isVisible: true }, select: { id: true } }),
+    db.problem.findMany({ where: { difficulty: 'HARD', isVisible: true }, select: { id: true } }),
+  ]);
+  const pools: Record<'EASY' | 'MEDIUM' | 'HARD', string[]> = {
+    EASY: easy.map((p) => p.id),
+    MEDIUM: medium.map((p) => p.id),
+    HARD: hard.map((p) => p.id),
+  };
+  const allIds = [...pools.EASY, ...pools.MEDIUM, ...pools.HARD];
 
-  // Build difficulty distribution based on requested difficulty
+  // Build difficulty distribution based on requested difficulty.
   const difficulties: Array<'EASY' | 'MEDIUM' | 'HARD'> = [];
   if (difficulty === 'EASY') {
-    // 70% EASY, 30% MEDIUM
-    difficulties.push('EASY', 'EASY', 'MEDIUM');
+    difficulties.push('EASY', 'EASY', 'MEDIUM'); // 70% EASY, 30% MEDIUM
   } else if (difficulty === 'MEDIUM') {
-    // 30% EASY, 70% MEDIUM
-    difficulties.push('EASY', 'MEDIUM', 'MEDIUM');
+    difficulties.push('EASY', 'MEDIUM', 'MEDIUM'); // 30% EASY, 70% MEDIUM
   } else {
-    // HARD: 0% EASY, 50% MEDIUM, 50% HARD
-    difficulties.push('MEDIUM', 'MEDIUM', 'HARD');
+    difficulties.push('MEDIUM', 'MEDIUM', 'HARD'); // 50% MEDIUM, 50% HARD
   }
   shuffle(difficulties);
 
+  const matchUsed = new Set<string>();
+  const pickFrom = (diff: 'EASY' | 'MEDIUM' | 'HARD'): string => {
+    // HARD falls back to MEDIUM when no HARD problems exist.
+    const target = diff === 'HARD' && pools.HARD.length === 0 ? 'MEDIUM' : diff;
+    let candidates = pools[target].filter((id) => !seen.has(id) && !matchUsed.has(id));
+    if (candidates.length === 0) candidates = pools[target].filter((id) => !matchUsed.has(id));
+    if (candidates.length === 0) candidates = allIds.filter((id) => !matchUsed.has(id));
+    if (candidates.length === 0) throw new Error('No visible problems available');
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
+    matchUsed.add(chosen);
+    return chosen;
+  };
+
+  const sequence: string[] = [];
   for (let i = 0; i < 3; i++) {
-    let diff = difficulties[i] ?? 'MEDIUM';
-
-    // Fallback: if HARD problems don't exist, use MEDIUM
-    if (diff === 'HARD') {
-      const hardCount = await db.problem.count({ where: { difficulty: 'HARD', isVisible: true } });
-      if (hardCount === 0) diff = 'MEDIUM';
-    }
-
-    const candidates = await db.problem.findMany({
-      where: { difficulty: diff, isVisible: true, id: { notIn: [...used] } },
-      select: { id: true },
-    });
-    if (candidates.length > 0) {
-      const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
-      used.add(chosen.id);
-      matchUsed.add(chosen.id);
-      sequence.push(chosen.id);
-    } else {
-      // Fallback: try any difficulty
-      const fallbacks = await db.problem.findMany({
-        where: { isVisible: true, id: { notIn: [...matchUsed] } },
-        select: { id: true },
-      });
-      if (fallbacks.length === 0) throw new Error('No visible problems available');
-      const chosen = fallbacks[Math.floor(Math.random() * fallbacks.length)]!;
-      matchUsed.add(chosen.id);
-      sequence.push(chosen.id);
-    }
+    sequence.push(pickFrom(difficulties[i] ?? 'MEDIUM'));
   }
 
   return shuffle(sequence);

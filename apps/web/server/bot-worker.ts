@@ -371,6 +371,19 @@ async function processBot(match: {
   const key = `${matchId}:${unlockedProblem.problemOrder}`;
   if (processedSubmissions.has(key)) return;
 
+  // Survive worker restarts: `processedSubmissions` is in-memory, so a restart
+  // would otherwise reschedule (and duplicate) submissions for a problem the
+  // bot already attempted. The DB is the source of truth — if a bot submission
+  // already exists for this problem, mark it processed and skip.
+  const existingBotSub = await db.submission.findFirst({
+    where: { matchId, userId: botUserId, problemId: unlockedProblem.problemId },
+    select: { id: true },
+  });
+  if (existingBotSub) {
+    processedSubmissions.add(key);
+    return;
+  }
+
   // Get the problem's actual difficulty
   const problem = await db.problem.findUnique({
     where: { id: unlockedProblem.problemId },

@@ -4,9 +4,15 @@ import { db } from '@zapdos/db';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+const PAGE_SIZE = 50;
+
+export async function GET(req: Request) {
   try {
     const user = await requireUser();
+
+    // Offset pagination so history beyond the first 50 is reachable.
+    const { searchParams } = new URL(req.url);
+    const offset = Math.max(0, Number.parseInt(searchParams.get('offset') ?? '0', 10) || 0);
 
     const matches = await db.match.findMany({
       where: {
@@ -15,7 +21,8 @@ export async function GET() {
         OR: [{ playerAId: user.id }, { playerBId: user.id }],
       },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      skip: offset,
+      take: PAGE_SIZE,
       include: {
         playerA: { select: { id: true, username: true } },
         playerB: { select: { id: true, username: true } },

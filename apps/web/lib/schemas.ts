@@ -94,7 +94,11 @@ export const signupSchema = z
         },
         { message: 'Disposable email addresses are not allowed' }
       ),
-    password: z.string().min(PASSWORD_MIN, `At least ${PASSWORD_MIN} characters`),
+    password: z
+      .string()
+      .min(PASSWORD_MIN, `At least ${PASSWORD_MIN} characters`)
+      .regex(/[a-zA-Z]/, 'Include at least one letter')
+      .regex(/[0-9]/, 'Include at least one number'),
   })
   .strict();
 
