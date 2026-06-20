@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { MusicToggle } from './MusicToggle';
 
 export function Navbar() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const pathname = usePathname();
   const router = useRouter();
   const [time, setTime] = useState('');
@@ -71,7 +71,7 @@ export function Navbar() {
                 logout
               </button>
             </>
-          ) : (
+          ) : status === 'unauthenticated' ? (
             <>
               <Link href="/signin" className="text-sm text-text-muted hover:text-text-secondary transition-colors">
                 &gt; login
@@ -83,7 +83,7 @@ export function Navbar() {
                 &gt; feedback
               </Link>
             </>
-          )}
+          ) : null}
           <span className="text-border-medium">|</span>
           <MusicToggle />
           <span className="text-border-medium">|</span>
@@ -127,7 +127,7 @@ export function Navbar() {
                   &gt; logout
                 </button>
               </>
-            ) : (
+            ) : status === 'unauthenticated' ? (
               <>
                 <Link href="/signin" className="font-mono text-sm text-text-muted hover:text-text-secondary transition-colors py-1.5">
                   &gt; login
@@ -139,7 +139,7 @@ export function Navbar() {
                   &gt; feedback
                 </Link>
               </>
-            )}
+            ) : null}
           </div>
         </div>
       )}

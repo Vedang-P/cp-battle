@@ -241,8 +241,14 @@ gcloud compute ssh cpb-web --zone=us-central1-a
 cd /home/vedang/cp-battle
 git pull
 sudo docker build -t zapdos-web:latest .
-sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml up -d
+sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml \
+  up -d --force-recreate web realtime matchmaker finalizer bot nginx
 ```
+
+> **Why `nginx` is in that list:** recreating `web` gives it a new Docker IP.
+> nginx uses a DNS resolver (see `deploy/nginx.conf`) to re-resolve upstreams
+> within ~10s, but recreating nginx alongside `web` makes the cutover instant
+> and reloads any nginx config changes. Omitting it can cause a brief 502.
 
 ### Database Migrations
 
