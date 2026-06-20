@@ -47,8 +47,7 @@ services:
       - "2358:2358"
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
-    tmpfs:
-      - /box:size=100M,mode=1777
+      - ./isolate.cfg:/usr/local/etc/isolate:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -60,7 +59,6 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      MAX_SANDBOX_ID: "999"
     healthcheck:
       test: ["CMD-SHELL", "/usr/bin/curl -sf http://localhost:2358/languages >/dev/null || exit 1"]
       interval: 10s
@@ -80,8 +78,7 @@ services:
     command: ["./scripts/workers"]
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
-    tmpfs:
-      - /box:size=100M,mode=1777
+      - ./isolate.cfg:/usr/local/etc/isolate:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -93,7 +90,6 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      MAX_SANDBOX_ID: "999"
 
   judge0-worker-2:
     image: mrkushalsm/judge0:latest
@@ -107,8 +103,7 @@ services:
     command: ["./scripts/workers"]
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
-    tmpfs:
-      - /box:size=100M,mode=1777
+      - ./isolate.cfg:/usr/local/etc/isolate:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -120,7 +115,6 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      MAX_SANDBOX_ID: "999"
 
   judge0-worker-3:
     image: mrkushalsm/judge0:latest
@@ -134,8 +128,7 @@ services:
     command: ["./scripts/workers"]
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
-    tmpfs:
-      - /box:size=100M,mode=1777
+      - ./isolate.cfg:/usr/local/etc/isolate:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -147,7 +140,6 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      MAX_SANDBOX_ID: "999"
 
 volumes:
   judge0-db-data:
