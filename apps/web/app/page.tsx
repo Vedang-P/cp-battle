@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { MatrixRain } from '@/components/MatrixRain';
 import { TerminalWindow } from '@/components/TerminalWindow';
+import { Footer } from '@/components/Footer';
 
 /**
  * Landing page — an interactive terminal.
@@ -219,6 +220,8 @@ export default function HomePage() {
             &gt; rank
           </Link>
         </div>
+
+        <Footer />
       </div>
     </main>
   );

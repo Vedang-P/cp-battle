@@ -1,7 +1,7 @@
 export function Footer() {
   return (
-    <footer className="fixed bottom-0 left-0 right-0 z-50 border-t border-green/10 bg-bg/95 backdrop-blur-sm">
-      <div className="mx-auto flex h-10 max-w-5xl items-center justify-between px-6">
+    <footer className="border-t border-green/10 bg-bg">
+      <div className="mx-auto flex h-12 max-w-5xl items-center justify-center gap-3 px-6">
         <span className="text-xs text-green/30">tokkenmaxxed with love.</span>
         <a
           href="https://github.com/Vedang-P"
