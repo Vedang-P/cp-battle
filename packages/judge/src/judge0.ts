@@ -18,6 +18,7 @@
  */
 
 import type { LanguageConfig } from './languages';
+import { createZip } from './zip';
 
 export class TimeoutError extends Error {
   constructor(message: string) {
@@ -54,9 +55,9 @@ const JUDGE0_LANGUAGE_IDS: Record<string, number> = {
  */
 const Judge0Status = {
   ACCEPTED: 3,
-  TLE: 4,
-  TLE_ALT: 5,
-  MLE: 6,
+  WRONG_ANSWER: 4,
+  TLE: 5,
+  COMPILATION_ERROR: 6,
   RE_SIGSEGV: 7,
   RE_SIGXFSZ: 8,
   RE_SIGFPE: 9,
@@ -105,19 +106,18 @@ interface Judge0ErrorResponse {
 }
 
 /**
- * Global throttle on concurrent Judge0 requests.
+ * Global throttle on concurrent in-flight Judge0 jobs.
  *
- * Judge0 runs a fixed pool of workers (3 in production) on a small VM. If the
- * web app fires more concurrent requests than there are workers, the surplus
- * queues — inflating wall-clock time and risking false TLE (both wall-time
- * limit and our HTTP abort can trip on a CORRECT but queued submission).
- *
- * This semaphore caps total in-flight Judge0 requests across ALL submissions
- * to match the worker pool. Configured via JUDGE0_MAX_CONCURRENT (default 3).
+ * With compile-once batching each submission is a SINGLE Judge0 job (not one
+ * per test case), so this caps how many submissions we judge at once. It sits a
+ * bit above the worker pool (6) so workers stay fed without us flooding Judge0
+ * or building hundreds of zips at once. Queue-wait does not cause false TLE:
+ * per-case limits are CPU-time based (ulimit -t), and our poll/abort budget
+ * scales with the box wall limit. Configured via JUDGE0_MAX_CONCURRENT.
  */
 const JUDGE0_MAX_CONCURRENT = (() => {
-  const v = Number(process.env.JUDGE0_MAX_CONCURRENT ?? '3');
-  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 3;
+  const v = Number(process.env.JUDGE0_MAX_CONCURRENT ?? '12');
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 12;
 })();
 
 let activeJudge0 = 0;
@@ -174,10 +174,7 @@ function mapJudge0ToPistonResult(data: Judge0SubmissionResponse): PistonRunResul
 function mapStatusToSignal(statusId: number): string | null {
   switch (statusId) {
     case Judge0Status.TLE:
-    case Judge0Status.TLE_ALT:
       return 'SIGKILL';
-    case Judge0Status.MLE:
-      return 'SIGOOM'; // distinct from SIGKILL (TLE) so classifyRun can emit MLE
     case Judge0Status.RE_SIGSEGV:
       return 'SIGSEGV';
     case Judge0Status.RE_SIGFPE:
@@ -328,7 +325,10 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
  * Retries every 200ms until the submission is no longer "In Queue" or "Processing".
  */
 async function pollForResult(token: string, signal: AbortSignal): Promise<Judge0SubmissionResponse> {
-  const maxAttempts = 300; // 60 seconds max (300 * 200ms)
+  // The real bound is the caller's abort signal (its timeout scales with the
+  // job's box wall limit). This cap is just a safety ceiling (~150s) so a
+  // never-firing signal can't loop forever.
+  const maxAttempts = 750;
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 200));
     if (signal.aborted) throw new TimeoutError('Polling aborted');
@@ -351,6 +351,262 @@ async function pollForResult(token: string, signal: AbortSignal): Promise<Judge0
     }
   }
   throw new TimeoutError(`Judge0 submission ${token} timed out after polling`);
+}
+
+// ---------------------------------------------------------------------------
+// Compile-once, run-many (Judge0 "Multi-file program", language id 89).
+//
+// A single submission with N test cases used to mean N Judge0 submissions, each
+// recompiling the source — catastrophic when `#include <bits/stdc++.h> -O2`
+// takes ~2s to compile and a problem has dozens of cases. Here we bundle the
+// source, a compile script, a run harness, and every test input into one zip,
+// so the code compiles ONCE and the harness runs the compiled program against
+// each input in turn. One Judge0 job per submission instead of N.
+//
+// The harness enforces a per-case CPU limit via `ulimit -t` (CPU time, immune
+// to wall-clock contention — the key to no false TLE under concurrent load) and
+// a generous per-case wall timeout as a backstop against hung processes. It
+// streams a nonce-delimited transcript we parse back into per-case results, and
+// stops at the first failing case (CP convention: first failure decides).
+// ---------------------------------------------------------------------------
+
+const MULTI_FILE_LANGUAGE_ID = 89;
+
+export interface BatchCaseResult {
+  stdout: string;
+  stderr: string;
+  /** Process exit code; 128+signal when killed by a signal. */
+  exitCode: number;
+  /** Wall time for the case in ms (approximate; CPU limit is what gates TLE). */
+  timeMs: number;
+}
+
+export interface BatchResult {
+  /** Non-null only on compile failure; the verdict is then CE. */
+  compileError: string | null;
+  /** Per-case results, in order, up to and including the first failing case. */
+  cases: BatchCaseResult[];
+  /** True if the harness ran to completion (vs the sandbox killing it early). */
+  completed: boolean;
+}
+
+export interface ExecuteBatchOptions {
+  language: LanguageConfig;
+  source: string;
+  inputs: string[];
+  /** Per-case CPU limit (ms). Enforced via ulimit -t (rounded up to seconds). */
+  cpuTimeLimitMs: number;
+  /** Per-case wall backstop (ms). */
+  wallTimeLimitMs: number;
+  /** Memory limit (MB) for the sandbox cgroup. */
+  memoryLimitMb: number;
+}
+
+interface MultiFileLang {
+  sourceName: string;
+  compileScript: string;
+  /** Command the harness runs per case (stdin/stdout redirected by the harness). */
+  runOneScript: string;
+}
+
+function multiFileLangConfig(language: LanguageConfig): MultiFileLang {
+  switch (language.id) {
+    case 'cpp':
+      return {
+        sourceName: 'main.cpp',
+        compileScript:
+          '#!/usr/bin/env bash\n' +
+          '/usr/local/gcc-9.2.0/bin/g++ -O2 -std=c++17 main.cpp -o a.out\n',
+        runOneScript:
+          '#!/usr/bin/env bash\n' +
+          'export LD_LIBRARY_PATH=/usr/local/gcc-9.2.0/lib64\n' +
+          'exec ./a.out\n',
+      };
+    case 'python':
+      return {
+        sourceName: 'script.py',
+        // py_compile turns a syntax error into a compile error (CE) instead of a
+        // runtime error on the first case.
+        compileScript:
+          '#!/usr/bin/env bash\n' +
+          '/usr/local/python-3.8.1/bin/python3 -m py_compile script.py\n',
+        runOneScript:
+          '#!/usr/bin/env bash\n' +
+          'exec /usr/local/python-3.8.1/bin/python3 script.py\n',
+      };
+    case 'java':
+      return {
+        sourceName: 'Main.java',
+        compileScript:
+          '#!/usr/bin/env bash\n' +
+          '/usr/local/openjdk13/bin/javac Main.java\n',
+        runOneScript:
+          '#!/usr/bin/env bash\n' +
+          'exec /usr/local/openjdk13/bin/java -XX:+UseSerialGC Main\n',
+      };
+    default:
+      throw new Error(`Unsupported language for batch judging: ${language.id}`);
+  }
+}
+
+/** Build the bash harness that runs the compiled program against every case. */
+function buildRunHarness(n: number, cpuSeconds: number, wallSeconds: number, cap: number, nonce: string): string {
+  return [
+    '#!/usr/bin/env bash',
+    `N=${n}`,
+    `CPU_S=${cpuSeconds}`,
+    `WALL_S=${wallSeconds}`,
+    `CAP=${cap}`,
+    `S='${nonce}'`,
+    'for ((i=1;i<=N;i++)); do',
+    '  start=$(date +%s%N)',
+    '  ( ulimit -t "$CPU_S"; exec timeout -s KILL "${WALL_S}s" bash __run_one.sh ) < "tc_${i}.txt" > "out_${i}" 2> "err_${i}"',
+    '  code=$?',
+    '  end=$(date +%s%N)',
+    '  ms=$(( (end - start) / 1000000 ))',
+    "  printf '%sH%d %d %d\\n' \"$S\" \"$i\" \"$code\" \"$ms\"",
+    '  head -c "$CAP" "out_${i}"',
+    "  printf '%sR%d\\n' \"$S\" \"$i\"",
+    '  head -c 800 "err_${i}"',
+    "  printf '%sT%d\\n' \"$S\" \"$i\"",
+    '  if [ "$code" -ne 0 ]; then break; fi',
+    'done',
+    "printf '%sDONE\\n' \"$S\"",
+    '',
+  ].join('\n');
+}
+
+/** Parse the harness transcript back into ordered per-case results. */
+function parseBatchTranscript(transcript: string, nonce: string, n: number): BatchCaseResult[] {
+  const cases: BatchCaseResult[] = [];
+  for (let i = 1; i <= n; i++) {
+    const hMarker = `${nonce}H${i} `;
+    const rMarker = `${nonce}R${i}`;
+    const tMarker = `${nonce}T${i}`;
+    const hIdx = transcript.indexOf(hMarker);
+    if (hIdx === -1) break; // not reached (we stop at first failure)
+    const hLineEnd = transcript.indexOf('\n', hIdx);
+    if (hLineEnd === -1) break;
+    const header = transcript.slice(hIdx + hMarker.length, hLineEnd); // "code ms"
+    const [codeStr, msStr] = header.split(' ');
+    const rIdx = transcript.indexOf(rMarker, hLineEnd);
+    const tIdx = rIdx === -1 ? -1 : transcript.indexOf(tMarker, rIdx);
+    if (rIdx === -1 || tIdx === -1) break; // truncated transcript
+    const stdout = transcript.slice(hLineEnd + 1, rIdx);
+    const stderr = transcript.slice(rIdx + rMarker.length, tIdx);
+    cases.push({
+      exitCode: Number(codeStr ?? '0') || 0,
+      timeMs: Number(msStr ?? '0') || 0,
+      stdout,
+      stderr,
+    });
+  }
+  return cases;
+}
+
+/**
+ * Compile once and run the source against every input in a single Judge0 job.
+ */
+export async function executeBatch(opts: ExecuteBatchOptions): Promise<BatchResult> {
+  const { language, source, inputs, cpuTimeLimitMs, wallTimeLimitMs, memoryLimitMb } = opts;
+  if (inputs.length === 0) return { compileError: null, cases: [], completed: true };
+
+  const cfg = multiFileLangConfig(language);
+  const nonce = `J0x${randomNonce()}x`;
+  const cpuSeconds = Math.max(1, Math.ceil(cpuTimeLimitMs / 1000));
+  const wallSeconds = Math.max(cpuSeconds + 2, Math.ceil(wallTimeLimitMs / 1000));
+  const OUTPUT_CAP_BYTES = 5_000_000; // per-case stdout cap
+
+  // Box-level (whole run) limits, kept within the Judge0 server's configured
+  // MAX_CPU_TIME_LIMIT (40) / MAX_WALL_TIME_LIMIT (60). Per-case limits are
+  // enforced inside the harness; these are generous backstops. Break-on-failure
+  // keeps the real total small for correct/WA solutions (every case exits fast).
+  const boxCpu = Math.min(38, inputs.length * cpuSeconds + 12);
+  const boxWall = Math.min(58, boxCpu + 20);
+
+  const files = [
+    { name: cfg.sourceName, content: source },
+    { name: 'compile', content: cfg.compileScript },
+    { name: 'run', content: buildRunHarness(inputs.length, cpuSeconds, wallSeconds, OUTPUT_CAP_BYTES, nonce) },
+    { name: '__run_one.sh', content: cfg.runOneScript },
+    ...inputs.map((input, i) => ({ name: `tc_${i + 1}.txt`, content: input })),
+  ];
+  const zipB64 = createZip(files).toString('base64');
+
+  const params = new URLSearchParams({ base64_encoded: 'true', wait: 'false' });
+  const body = {
+    language_id: MULTI_FILE_LANGUAGE_ID,
+    additional_files: zipB64,
+    cpu_time_limit: boxCpu,
+    cpu_extra_time: 2,
+    wall_time_limit: boxWall,
+    memory_limit: Math.min(Math.max(memoryLimitMb * 1024 + 32000, 256000), 512000),
+    stack_limit: 128000,
+    max_file_size: 65536,
+    enable_network: false,
+    enable_per_process_and_thread_time_limit: false,
+    enable_per_process_and_thread_memory_limit: false,
+  };
+
+  await acquireJudge0Slot();
+  const controller = new AbortController();
+  const httpTimeout = boxWall * 1000 + 30000;
+  const timer = setTimeout(() => controller.abort(), httpTimeout);
+
+  try {
+    let lastInternalError: Judge0SubmissionResponse | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`${JUDGE0_URL}/submissions?${params}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getJudge0Headers() },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Judge0 HTTP ${res.status}: ${text}`);
+      }
+      const data = await res.json();
+      const resultData: Judge0SubmissionResponse =
+        data.token && !data.status ? await pollForResult(data.token, controller.signal) : (data as Judge0SubmissionResponse);
+
+      if ('error' in resultData) {
+        throw new Error(`Judge0 error: ${(resultData as unknown as Judge0ErrorResponse).error}`);
+      }
+      if (resultData.status?.id === Judge0Status.INTERNAL_ERROR) {
+        lastInternalError = resultData;
+        continue;
+      }
+
+      // Compilation failed -> CE. (Judge0 marks the whole job status 6.)
+      const compileOutput = decodeBase64(resultData.compile_output);
+      if (resultData.status?.id === Judge0Status.COMPILATION_ERROR || (compileOutput.trim() && resultData.status?.id !== Judge0Status.ACCEPTED && (resultData.stdout ?? '') === '')) {
+        return { compileError: compileOutput.trim() || 'Compilation failed', cases: [], completed: true };
+      }
+
+      const transcript = decodeBase64(resultData.stdout);
+      return {
+        compileError: null,
+        cases: parseBatchTranscript(transcript, nonce, inputs.length),
+        completed: transcript.includes(`${nonce}DONE`),
+      };
+    }
+
+    const detail = lastInternalError?.message ? decodeBase64(lastInternalError.message) : 'unknown';
+    throw new Error(`Judge0 internal error (status 13) after retry: ${detail}`);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new TimeoutError(`Judge0 batch request timed out after ${httpTimeout}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    releaseJudge0Slot();
+  }
+}
+
+function randomNonce(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 /** Liveness check used by health endpoints. */

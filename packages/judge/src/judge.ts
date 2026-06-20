@@ -14,7 +14,7 @@
  */
 
 import { isOutputCorrect } from './compare';
-import { executeOnce, TimeoutError, type PistonRunResult } from './judge0';
+import { executeBatch, TimeoutError, type BatchCaseResult } from './judge0';
 import type { LanguageConfig } from './languages';
 
 export type Verdict = 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE';
@@ -80,211 +80,105 @@ function truncate(s: string): string {
   return trimmed.length > MAX_ERROR_LEN ? trimmed.slice(0, MAX_ERROR_LEN) + '\n…[truncated]' : trimmed;
 }
 
-/** Classify a single Piston run into a verdict. AC decided by output comparison. */
-function classifyRun(run: PistonRunResult['run'], actual: string, expected: string): Verdict {
-  // SIGOOM is our sentinel for Judge0 status 6 (MLE); must check before SIGKILL.
-  if (run.signal === 'SIGOOM') return 'MLE';
-  if (run.signal === 'SIGKILL' || run.signal === 'SIGXCPU') return 'TLE';
-  if (run.signal === 'SIGSEGV' || run.signal === 'SIGBUS') return 'RE';
-  // Non-zero exit without a known timeout/OOM signal => runtime error.
-  if (run.code !== null && run.code !== 0 && run.signal === null) return 'RE';
-  // Otherwise compare outputs.
-  return isOutputCorrect(actual, expected) ? 'AC' : 'WA';
+const MEMORY_ERROR_RE = /bad_alloc|MemoryError|OutOfMemoryError|Cannot allocate memory|std::length_error/i;
+
+/**
+ * Classify one batch case from its harness exit code and output.
+ *
+ * Exit-code convention (from the run harness):
+ *   0        -> ran cleanly; AC/WA decided by output comparison
+ *   124      -> `timeout` fired (per-case wall backstop)        -> TLE
+ *   137,152  -> killed by SIGKILL/SIGXCPU (ulimit -t CPU limit) -> TLE (or MLE
+ *               if the program reported an allocation failure first)
+ *   139      -> SIGSEGV                                         -> RE
+ *   other ≠0 -> runtime error                                  -> RE (or MLE)
+ */
+function classifyCase(c: BatchCaseResult, expected: string): Verdict {
+  const code = c.exitCode;
+  if (code === 0) {
+    return isOutputCorrect(c.stdout, expected) ? 'AC' : 'WA';
+  }
+  if (code === 124 || code === 137 || code === 152) {
+    return MEMORY_ERROR_RE.test(c.stderr) ? 'MLE' : 'TLE';
+  }
+  // Any other non-zero exit is a runtime error — unless the program clearly ran
+  // out of memory, in which case surface MLE.
+  return MEMORY_ERROR_RE.test(c.stderr) ? 'MLE' : 'RE';
 }
 
 export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult> {
   const { language, source, testCases, timeLimitMs, memoryLimitMb } = spec;
+
+  if (testCases.length === 0) {
+    // No test cases is a data error; treat as AC so we don't block on it.
+    return { verdict: 'AC', passed: 0, total: 0, timeMs: 0, memoryKb: 0, compileError: null, runtimeError: null };
+  }
 
   const effectiveTimeMs = Math.min(
     MAX_EFFECTIVE_TIME_MS,
     Math.round(timeLimitMs * language.timeMultiplier * HW_MULTIPLIER),
   );
   const effectiveMemMb = Math.round(memoryLimitMb * language.memoryMultiplier);
+  // Per-case wall backstop: generously larger than the CPU limit so that
+  // wall-clock contention under concurrent load can never trip a false TLE —
+  // only the CPU limit (ulimit -t) gates real TLE.
+  const wallMs = effectiveTimeMs + 8000;
 
-  // First, a single execution on the first case to detect compile errors up front.
-  if (testCases.length === 0) {
-    // No test cases is a data error; treat as AC so we don't block on it, but flag.
-    return {
-      verdict: 'AC',
-      passed: 0,
-      total: 0,
-      timeMs: 0,
-      memoryKb: 0,
-      compileError: null,
-      runtimeError: null,
-    };
-  }
-
-  // Run first test case to detect compile errors early
-  let firstResult: PistonRunResult;
+  // Compile once, run every case in a single Judge0 job.
+  let batch;
   try {
-    firstResult = await executeOnce({
+    batch = await executeBatch({
       language,
       source,
-      stdin: testCases[0]!.input,
+      inputs: testCases.map((tc) => tc.input),
       cpuTimeLimitMs: effectiveTimeMs,
+      wallTimeLimitMs: wallMs,
       memoryLimitMb: effectiveMemMb,
     });
   } catch (err) {
     if (err instanceof TimeoutError) {
-      return {
-        verdict: 'TLE',
-        passed: 0,
-        total: testCases.length,
-        timeMs: effectiveTimeMs,
-        memoryKb: null,
-        compileError: null,
-        runtimeError: null,
-      };
+      return { verdict: 'TLE', passed: 0, total: testCases.length, timeMs: effectiveTimeMs, memoryKb: null, compileError: null, runtimeError: null };
     }
     const msg = err instanceof Error ? err.message : String(err);
-    return {
-      verdict: 'CE',
-      passed: 0,
-      total: testCases.length,
-      timeMs: null,
-      memoryKb: null,
-      compileError: `Judge unavailable: ${truncate(msg)}`,
-      runtimeError: null,
-    };
+    return { verdict: 'CE', passed: 0, total: testCases.length, timeMs: null, memoryKb: null, compileError: `Judge unavailable: ${truncate(msg)}`, runtimeError: null };
   }
 
-  // Compile error short-circuits the whole submission.
-  if (firstResult.compile && firstResult.compile.code !== null && firstResult.compile.code !== 0) {
-    return {
-      verdict: 'CE',
-      passed: 0,
-      total: testCases.length,
-      timeMs: null,
-      memoryKb: null,
-      compileError: truncate(firstResult.compile.stderr || firstResult.compile.stdout),
-      runtimeError: null,
-    };
+  // Compile error short-circuits everything.
+  if (batch.compileError !== null) {
+    return { verdict: 'CE', passed: 0, total: testCases.length, timeMs: null, memoryKb: null, compileError: truncate(batch.compileError), runtimeError: null };
   }
 
-  // Classify first test case
-  const firstVerdict = classifyRun(firstResult.run, firstResult.run.stdout, testCases[0]!.expected);
-  let maxTime = firstResult.run.cpu_time_ms ?? 0;
-  let maxMem = firstResult.run.memory_bytes ?? 0;
-
-  // If first test case failed, return immediately
-  if (firstVerdict !== 'AC') {
-    return {
-      verdict: firstVerdict,
-      passed: 0,
-      total: testCases.length,
-      timeMs: maxTime || null,
-      memoryKb: maxMem ? Math.round(maxMem / 1024) : null,
-      compileError: null,
-      runtimeError: firstVerdict === 'RE' ? truncate(firstResult.run.stderr) : null,
-    };
-  }
-
-  // Run remaining test cases in parallel, but keep the batch small. The Judge0
-  // client enforces a global concurrency cap (JUDGE0_MAX_CONCURRENT) matching
-  // the worker pool, so a large batch here would only pile up in that queue.
-  // A batch of 3 also lets us short-circuit on TLE sooner.
-  const remainingTestCases = testCases.slice(1);
-  const BATCH_SIZE = 3;
-  const results: Array<{ status: 'fulfilled'; value: PistonRunResult } | { status: 'rejected'; reason: unknown }> = [];
-
-  for (let i = 0; i < remainingTestCases.length; i += BATCH_SIZE) {
-    const batch = remainingTestCases.slice(i, i + BATCH_SIZE);
-    const batchResults = await Promise.allSettled(
-      batch.map((tc) =>
-        executeOnce({
-          language,
-          source,
-          stdin: tc.input,
-          cpuTimeLimitMs: effectiveTimeMs,
-          memoryLimitMb: effectiveMemMb,
-        })
-      )
-    );
-    results.push(...batchResults);
-
-    // If any test case in this batch failed with a hard error (TLE/CE),
-    // stop processing remaining batches immediately.
-    const hasHardFailure = batchResults.some(
-      (r) => r.status === 'rejected' && r.reason instanceof TimeoutError
-    );
-    if (hasHardFailure) break;
-  }
-
-  let passed = 1; // First test case passed
-  let failedVerdict: Verdict | null = null;
-  let failedRuntimeError: string | null = null;
-
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i]!;
-
-    if (result.status === 'rejected') {
-      const err = result.reason;
-      if (err instanceof TimeoutError) {
-        failedVerdict = 'TLE';
-        break;
+  // Walk cases in order; the first non-AC decides the verdict (CP convention).
+  let passed = 0;
+  let maxTime = 0;
+  for (let i = 0; i < testCases.length; i++) {
+    const c = batch.cases[i];
+    if (!c) {
+      // The harness stopped producing cases without a failing verdict above it.
+      // If it didn't run to completion, the sandbox killed it at the box level
+      // (out of overall time) — report TLE. Otherwise it's a genuine judge fault.
+      if (!batch.completed) {
+        return { verdict: 'TLE', passed, total: testCases.length, timeMs: maxTime || effectiveTimeMs, memoryKb: null, compileError: null, runtimeError: null };
       }
-      failedVerdict = 'CE';
-      failedRuntimeError = `Judge unavailable: ${truncate(err instanceof Error ? err.message : String(err))}`;
-      break;
+      return { verdict: 'CE', passed, total: testCases.length, timeMs: maxTime || null, memoryKb: null, compileError: 'Judge produced incomplete results', runtimeError: null };
     }
 
-    const runResult = result.value;
-
-    // Track max time and memory
-    if (runResult.run.cpu_time_ms && runResult.run.cpu_time_ms > maxTime) {
-      maxTime = runResult.run.cpu_time_ms;
-    }
-    if (runResult.run.memory_bytes && runResult.run.memory_bytes > maxMem) {
-      maxMem = runResult.run.memory_bytes;
-    }
-
-    const verdict = classifyRun(runResult.run, runResult.run.stdout, remainingTestCases[i]!.expected);
-
+    if (c.timeMs > maxTime) maxTime = c.timeMs;
+    const verdict = classifyCase(c, testCases[i]!.expected);
     if (verdict === 'AC') {
       passed++;
       continue;
     }
-
-    // First failure decides the verdict (check precedence)
-    if (!failedVerdict || getVerdictPriority(verdict) > getVerdictPriority(failedVerdict)) {
-      failedVerdict = verdict;
-      failedRuntimeError = verdict === 'RE' ? truncate(runResult.run.stderr) : null;
-    }
-  }
-
-  if (failedVerdict) {
     return {
-      verdict: failedVerdict,
+      verdict,
       passed,
       total: testCases.length,
       timeMs: maxTime || null,
-      memoryKb: maxMem ? Math.round(maxMem / 1024) : null,
+      memoryKb: null,
       compileError: null,
-      runtimeError: failedRuntimeError,
+      runtimeError: verdict === 'RE' || verdict === 'MLE' ? truncate(c.stderr) || null : null,
     };
   }
 
-  return {
-    verdict: 'AC',
-    passed,
-    total: testCases.length,
-    timeMs: maxTime || null,
-    memoryKb: maxMem ? Math.round(maxMem / 1024) : null,
-    compileError: null,
-    runtimeError: null,
-  };
-}
-
-/** Verdict precedence: higher number = higher priority. */
-function getVerdictPriority(verdict: Verdict): number {
-  switch (verdict) {
-    case 'CE': return 5;
-    case 'TLE': return 4;
-    case 'MLE': return 3;
-    case 'RE': return 2;
-    case 'WA': return 1;
-    case 'AC': return 0;
-    default: return 0;
-  }
+  return { verdict: 'AC', passed, total: testCases.length, timeMs: maxTime || null, memoryKb: null, compileError: null, runtimeError: null };
 }

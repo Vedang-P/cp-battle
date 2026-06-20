@@ -48,6 +48,11 @@ services:
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
       - ./isolate.cfg:/usr/local/etc/isolate:ro
+      # Precompiled <bits/stdc++.h> (built once on the host via
+      # /opt/judge0-pch/build.sh). Cuts each C++ -O2 compile from ~1.6s to
+      # ~0.4s, which is the dominant cost when many users submit at once.
+      # GCC silently ignores it if compile flags ever differ, so it's safe.
+      - /opt/judge0-pch/stdc++.h.gch:/usr/local/gcc-9.2.0/include/c++/9.2.0/x86_64-pc-linux-gnu/bits/stdc++.h.gch:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -59,12 +64,19 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      # Accept the generous CPU/wall limits the judge client sends (hardware
-      # calibration + contention headroom). Defaults (15s CPU / 20s wall) are
-      # too low and would clamp our limits, causing false TLE.
-      MAX_CPU_TIME_LIMIT: "20"
+      # Accept the generous CPU/wall limits the judge client sends. The
+      # compile-once batch run executes every test case in one sandbox, so the
+      # box-level limit must cover the whole run (per-case limits are enforced
+      # inside the harness). MAX_MAX_FILE_SIZE is raised so large compiled
+      # binaries and big test inputs/outputs aren't truncated.
+      MAX_CPU_TIME_LIMIT: "40"
       MAX_EXTRA_CPU_TIME: "5"
       MAX_WALL_TIME_LIMIT: "60"
+      MAX_MAX_FILE_SIZE: "65536"
+      # Resque workers per container. 3 containers x 2 = 6 total, matched to the
+      # 2-vCPU box: enough to overlap compiles with I/O without the 6x CPU
+      # oversubscription (12 workers) that caused isolate internal errors.
+      COUNT: "2"
     healthcheck:
       test: ["CMD-SHELL", "/usr/bin/curl -sf http://localhost:2358/languages >/dev/null || exit 1"]
       interval: 10s
@@ -85,6 +97,11 @@ services:
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
       - ./isolate.cfg:/usr/local/etc/isolate:ro
+      # Precompiled <bits/stdc++.h> (built once on the host via
+      # /opt/judge0-pch/build.sh). Cuts each C++ -O2 compile from ~1.6s to
+      # ~0.4s, which is the dominant cost when many users submit at once.
+      # GCC silently ignores it if compile flags ever differ, so it's safe.
+      - /opt/judge0-pch/stdc++.h.gch:/usr/local/gcc-9.2.0/include/c++/9.2.0/x86_64-pc-linux-gnu/bits/stdc++.h.gch:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -96,12 +113,19 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      # Accept the generous CPU/wall limits the judge client sends (hardware
-      # calibration + contention headroom). Defaults (15s CPU / 20s wall) are
-      # too low and would clamp our limits, causing false TLE.
-      MAX_CPU_TIME_LIMIT: "20"
+      # Accept the generous CPU/wall limits the judge client sends. The
+      # compile-once batch run executes every test case in one sandbox, so the
+      # box-level limit must cover the whole run (per-case limits are enforced
+      # inside the harness). MAX_MAX_FILE_SIZE is raised so large compiled
+      # binaries and big test inputs/outputs aren't truncated.
+      MAX_CPU_TIME_LIMIT: "40"
       MAX_EXTRA_CPU_TIME: "5"
       MAX_WALL_TIME_LIMIT: "60"
+      MAX_MAX_FILE_SIZE: "65536"
+      # Resque workers per container. 3 containers x 2 = 6 total, matched to the
+      # 2-vCPU box: enough to overlap compiles with I/O without the 6x CPU
+      # oversubscription (12 workers) that caused isolate internal errors.
+      COUNT: "2"
 
   judge0-worker-2:
     image: mrkushalsm/judge0:latest
@@ -116,6 +140,11 @@ services:
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
       - ./isolate.cfg:/usr/local/etc/isolate:ro
+      # Precompiled <bits/stdc++.h> (built once on the host via
+      # /opt/judge0-pch/build.sh). Cuts each C++ -O2 compile from ~1.6s to
+      # ~0.4s, which is the dominant cost when many users submit at once.
+      # GCC silently ignores it if compile flags ever differ, so it's safe.
+      - /opt/judge0-pch/stdc++.h.gch:/usr/local/gcc-9.2.0/include/c++/9.2.0/x86_64-pc-linux-gnu/bits/stdc++.h.gch:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -127,12 +156,19 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      # Accept the generous CPU/wall limits the judge client sends (hardware
-      # calibration + contention headroom). Defaults (15s CPU / 20s wall) are
-      # too low and would clamp our limits, causing false TLE.
-      MAX_CPU_TIME_LIMIT: "20"
+      # Accept the generous CPU/wall limits the judge client sends. The
+      # compile-once batch run executes every test case in one sandbox, so the
+      # box-level limit must cover the whole run (per-case limits are enforced
+      # inside the harness). MAX_MAX_FILE_SIZE is raised so large compiled
+      # binaries and big test inputs/outputs aren't truncated.
+      MAX_CPU_TIME_LIMIT: "40"
       MAX_EXTRA_CPU_TIME: "5"
       MAX_WALL_TIME_LIMIT: "60"
+      MAX_MAX_FILE_SIZE: "65536"
+      # Resque workers per container. 3 containers x 2 = 6 total, matched to the
+      # 2-vCPU box: enough to overlap compiles with I/O without the 6x CPU
+      # oversubscription (12 workers) that caused isolate internal errors.
+      COUNT: "2"
 
   judge0-worker-3:
     image: mrkushalsm/judge0:latest
@@ -147,6 +183,11 @@ services:
     volumes:
       - ../judge0-cable.yml:/api/config/cable.yml:ro
       - ./isolate.cfg:/usr/local/etc/isolate:ro
+      # Precompiled <bits/stdc++.h> (built once on the host via
+      # /opt/judge0-pch/build.sh). Cuts each C++ -O2 compile from ~1.6s to
+      # ~0.4s, which is the dominant cost when many users submit at once.
+      # GCC silently ignores it if compile flags ever differ, so it's safe.
+      - /opt/judge0-pch/stdc++.h.gch:/usr/local/gcc-9.2.0/include/c++/9.2.0/x86_64-pc-linux-gnu/bits/stdc++.h.gch:ro
     environment:
       DATABASE_URL: postgresql://judge0:${JUDGE0_DB_PASSWORD}@judge0-db:5432/judge0
       REDIS_URL: redis://judge0-redis:6379
@@ -158,12 +199,19 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
-      # Accept the generous CPU/wall limits the judge client sends (hardware
-      # calibration + contention headroom). Defaults (15s CPU / 20s wall) are
-      # too low and would clamp our limits, causing false TLE.
-      MAX_CPU_TIME_LIMIT: "20"
+      # Accept the generous CPU/wall limits the judge client sends. The
+      # compile-once batch run executes every test case in one sandbox, so the
+      # box-level limit must cover the whole run (per-case limits are enforced
+      # inside the harness). MAX_MAX_FILE_SIZE is raised so large compiled
+      # binaries and big test inputs/outputs aren't truncated.
+      MAX_CPU_TIME_LIMIT: "40"
       MAX_EXTRA_CPU_TIME: "5"
       MAX_WALL_TIME_LIMIT: "60"
+      MAX_MAX_FILE_SIZE: "65536"
+      # Resque workers per container. 3 containers x 2 = 6 total, matched to the
+      # 2-vCPU box: enough to overlap compiles with I/O without the 6x CPU
+      # oversubscription (12 workers) that caused isolate internal errors.
+      COUNT: "2"
 
 volumes:
   judge0-db-data:
