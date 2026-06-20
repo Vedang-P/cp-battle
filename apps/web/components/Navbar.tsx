@@ -2,15 +2,23 @@
 
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MusicToggle } from './MusicToggle';
 
 export function Navbar() {
   const { data: session } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
   const [time, setTime] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Redirect to /choose-handle if OAuth user hasn't completed onboarding
+  useEffect(() => {
+    if (session?.user && session.user.onboardingComplete === false && pathname !== '/choose-handle') {
+      router.push('/choose-handle');
+    }
+  }, [session, pathname, router]);
 
   useEffect(() => {
     const update = () => {

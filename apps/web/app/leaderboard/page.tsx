@@ -47,7 +47,7 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-10 animate-fade-in">
+    <main className="mx-auto w-full max-w-7xl px-4 py-10 animate-fade-in">
       <h1 className="mb-6 text-lg font-semibold tracking-tight" style={{ fontFamily: 'var(--font-space-grotesk)' }}>
         <GlowText color="green">leaderboard</GlowText>
       </h1>

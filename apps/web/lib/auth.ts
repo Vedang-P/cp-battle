@@ -125,6 +125,7 @@ export const authOptions: NextAuthOptions = {
               provider: account.provider,
               providerAccountId: account.providerAccountId,
               passwordHash: null,
+              onboardingComplete: false,
               accounts: {
                 create: {
                   type: account.type,
@@ -155,11 +156,12 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider && account.provider !== 'credentials' && user?.email) {
         const dbUser = await db.user.findUnique({
           where: { email: user.email.toLowerCase() },
-          select: { id: true, username: true },
+          select: { id: true, username: true, onboardingComplete: true },
         });
         if (dbUser) {
           token.userId = dbUser.id;
           token.username = dbUser.username;
+          token.onboardingComplete = dbUser.onboardingComplete;
         }
       }
       return token;
@@ -168,6 +170,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.userId as string;
         session.user.username = (token.username as string) ?? session.user.name ?? '';
+        session.user.onboardingComplete = token.onboardingComplete as boolean ?? true;
       }
       return session;
     },

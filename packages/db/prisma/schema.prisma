@@ -75,6 +75,7 @@ model User {
   // OAuth fields
   provider       String?   // 'credentials' | 'google'
   providerAccountId String? @unique
+  onboardingComplete Boolean @default(true)
 
   // Rating + record. ELO updated by the match-completion job only, never ad-hoc.
   elo            Int       @default(1200)
