@@ -19,7 +19,10 @@ export const env = {
   get authSecret() { return required('AUTH_SECRET'); },
   get nextauthUrl() { return optional('NEXTAUTH_URL', 'http://localhost:3000'); },
   get realtimeCorsOrigin() { return optional('REALTIME_CORS_ORIGIN', 'http://localhost:3000'); },
-  get judgeConcurrency() { return Number(process.env.JUDGE_CONCURRENCY ?? 4); },
+  get judgeConcurrency() {
+    const v = Number(process.env.JUDGE_CONCURRENCY ?? '4');
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 4;
+  },
   get googleClientId() { return optional('GOOGLE_CLIENT_ID', ''); },
   get googleClientSecret() { return optional('GOOGLE_CLIENT_SECRET', ''); },
   get githubClientId() { return optional('GITHUB_CLIENT_ID', ''); },

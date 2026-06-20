@@ -7,6 +7,7 @@
  */
 
 import type { NextAuthOptions } from 'next-auth';
+import type { Provider } from 'next-auth/providers/index';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import GitHubProvider from 'next-auth/providers/github';
@@ -20,15 +21,15 @@ import { signinSchema } from '@/lib/schemas';
 // have slightly different type definitions for the Adapter interface.
 const adapter = PrismaAdapter(db) as NextAuthOptions['adapter'];
 
-export const authOptions: NextAuthOptions = {
-  adapter,
-  session: { strategy: 'jwt' },
-  secret: env.authSecret,
-  pages: { signIn: '/signin' },
-  providers: [
+// Only register OAuth providers when their credentials are actually set —
+// otherwise NextAuth renders a sign-in button that fails with an opaque error.
+const providers: Provider[] = [];
+
+if (env.googleClientId && env.googleClientSecret) {
+  providers.push(
     GoogleProvider({
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
+      clientId: env.googleClientId,
+      clientSecret: env.googleClientSecret,
       authorization: {
         params: {
           prompt: 'consent',
@@ -37,11 +38,20 @@ export const authOptions: NextAuthOptions = {
         },
       },
     }),
+  );
+}
+
+if (env.githubClientId && env.githubClientSecret) {
+  providers.push(
     GitHubProvider({
-      clientId: env.githubClientId ?? '',
-      clientSecret: env.githubClientSecret ?? '',
+      clientId: env.githubClientId,
+      clientSecret: env.githubClientSecret,
     }),
-    CredentialsProvider({
+  );
+}
+
+providers.push(
+  CredentialsProvider({
       name: 'Credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
@@ -69,7 +79,14 @@ export const authOptions: NextAuthOptions = {
         };
       },
     }),
-  ],
+);
+
+export const authOptions: NextAuthOptions = {
+  adapter,
+  session: { strategy: 'jwt' },
+  secret: env.authSecret,
+  pages: { signIn: '/signin' },
+  providers,
   callbacks: {
     async signIn({ user, account }) {
       // For OAuth: link account to existing user or create new user
@@ -80,10 +97,16 @@ export const authOptions: NextAuthOptions = {
         // Check if user already exists
         const existingUser = await db.user.findUnique({
           where: { email },
+          select: { id: true, passwordHash: true },
         });
 
         if (existingUser) {
-          // Link the OAuth account to existing user
+          // Prevent OAuth from silently taking over a credentials account.
+          // If the existing user has a password, they must sign in with it.
+          if (existingUser.passwordHash) {
+            return '/signin?error=OAuthEmailConflict';
+          }
+          // Link OAuth to existing OAuth-only account
           await db.account.upsert({
             where: {
               provider_providerAccountId: {

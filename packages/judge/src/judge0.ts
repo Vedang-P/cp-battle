@@ -104,6 +104,44 @@ interface Judge0ErrorResponse {
   token?: string;
 }
 
+/**
+ * Global throttle on concurrent Judge0 requests.
+ *
+ * Judge0 runs a fixed pool of workers (3 in production) on a small VM. If the
+ * web app fires more concurrent requests than there are workers, the surplus
+ * queues — inflating wall-clock time and risking false TLE (both wall-time
+ * limit and our HTTP abort can trip on a CORRECT but queued submission).
+ *
+ * This semaphore caps total in-flight Judge0 requests across ALL submissions
+ * to match the worker pool. Configured via JUDGE0_MAX_CONCURRENT (default 3).
+ */
+const JUDGE0_MAX_CONCURRENT = (() => {
+  const v = Number(process.env.JUDGE0_MAX_CONCURRENT ?? '3');
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 3;
+})();
+
+let activeJudge0 = 0;
+const judge0Queue: (() => void)[] = [];
+
+function acquireJudge0Slot(): Promise<void> {
+  if (activeJudge0 < JUDGE0_MAX_CONCURRENT) {
+    activeJudge0++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    judge0Queue.push(() => {
+      activeJudge0++;
+      resolve();
+    });
+  });
+}
+
+function releaseJudge0Slot(): void {
+  activeJudge0--;
+  const next = judge0Queue.shift();
+  if (next) next();
+}
+
 function decodeBase64(s: string | null): string {
   if (!s) return '';
   return Buffer.from(s, 'base64').toString('utf-8');
@@ -139,7 +177,7 @@ function mapStatusToSignal(statusId: number): string | null {
     case Judge0Status.TLE_ALT:
       return 'SIGKILL';
     case Judge0Status.MLE:
-      return 'SIGKILL';
+      return 'SIGOOM'; // distinct from SIGKILL (TLE) so classifyRun can emit MLE
     case Judge0Status.RE_SIGSEGV:
       return 'SIGSEGV';
     case Judge0Status.RE_SIGFPE:
@@ -159,6 +197,10 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     throw new Error(`Unsupported language for Judge0: ${language.id}`);
   }
 
+  // NOTE: The Judge0 server runs GCC 9.2.0 (verified via /languages/54), which
+  // does NOT support -std=c++20 (that needs GCC 10+). Using c++20 here makes the
+  // compiler reject the flag and turns EVERY C++ submission into a compile error.
+  // Keep c++17 until the Judge0 image is upgraded to a newer GCC.
   const compilerOptions =
     language.id === 'cpp' ? '-O2 -std=c++17' : undefined;
 
@@ -167,13 +209,20 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     wait: 'true',
   });
 
+  // CPU limit as a float (Judge0 accepts decimals) — avoids the lossy
+  // integer rounding that could silently shrink a 1.5s limit. Floor at 1s.
+  const cpuSeconds = Math.max(1, Number((cpuTimeLimitMs / 1000).toFixed(2)));
+  // Wall limit must be generous: under CPU contention a CORRECT program needs
+  // far more wall time than CPU time. A tight wall limit causes false TLE.
+  const wallSeconds = Math.min(60, Math.ceil(cpuSeconds) + 10);
+
   const body: Record<string, unknown> = {
     language_id: languageId,
     source_code: Buffer.from(source).toString('base64'),
     stdin: Buffer.from(stdin).toString('base64'),
-    cpu_time_limit: Math.max(1, Math.round(cpuTimeLimitMs / 1000)),
-    cpu_extra_time: 1,
-    wall_time_limit: Math.max(5, Math.round(cpuTimeLimitMs / 1000) + 5),
+    cpu_time_limit: cpuSeconds,
+    cpu_extra_time: 2,
+    wall_time_limit: wallSeconds,
     // Memory limit in KB. Cap at Judge0 CE max (512000 KB).
     // Use at least 128MB for compilation.
     memory_limit: Math.min(Math.max(memoryLimitMb * 1024, 128000), 512000),
@@ -190,11 +239,16 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
     body.compiler_options = compilerOptions;
   }
 
+  // Acquire a Judge0 slot BEFORE starting the abort timer, so queue-wait time
+  // is never counted against the request's HTTP timeout (which would falsely
+  // surface as TLE for a submission that simply waited in line).
+  await acquireJudge0Slot();
+
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    httpTimeoutMs ?? cpuTimeLimitMs + 30000,
-  );
+  // HTTP timeout generously exceeds the wall limit so a legitimately slow
+  // (but within-limit) run completes rather than aborting into a false TLE.
+  const httpTimeout = httpTimeoutMs ?? wallSeconds * 1000 + 20000;
+  const timer = setTimeout(() => controller.abort(), httpTimeout);
 
   try {
     // Submit the code
@@ -233,11 +287,12 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
   } catch (err) {
     // Map AbortError to TLE so the submission route shows TLE instead of CE
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new TimeoutError(`Judge0 request timed out after ${httpTimeoutMs ?? cpuTimeLimitMs + 30000}ms`);
+      throw new TimeoutError(`Judge0 request timed out after ${httpTimeout}ms`);
     }
     throw err;
   } finally {
     clearTimeout(timer);
+    releaseJudge0Slot();
   }
 }
 

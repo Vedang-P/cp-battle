@@ -7,7 +7,10 @@
  * Configured via JUDGE_CONCURRENCY env var (default 4).
  */
 
-const MAX_CONCURRENT = Number(process.env.JUDGE_CONCURRENCY ?? 4);
+const MAX_CONCURRENT = (() => {
+  const v = Number(process.env.JUDGE_CONCURRENCY ?? '4');
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 4;
+})();
 let activeCount = 0;
 const waitQueue: (() => void)[] = [];
 

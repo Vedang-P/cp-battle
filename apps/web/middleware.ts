@@ -40,7 +40,8 @@ export function middleware(request: NextRequest) {
       const expectedOrigin = new URL(APP_URL).origin;
       const requestOrigin = originHeader ?? (refererHeader ? new URL(refererHeader).origin : null);
 
-      if (requestOrigin && requestOrigin !== expectedOrigin && requestOrigin !== origin) {
+      // Reject if neither Origin nor Referer is present, or if origin doesn't match.
+      if (!requestOrigin || (requestOrigin !== expectedOrigin && requestOrigin !== origin)) {
         return NextResponse.json({ error: 'Cross-origin requests not allowed' }, { status: 403 });
       }
     }

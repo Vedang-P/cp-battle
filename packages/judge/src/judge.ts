@@ -55,6 +55,26 @@ export interface JudgeResult {
 
 const MAX_ERROR_LEN = 2000;
 
+/**
+ * Global hardware-calibration multiplier applied to every time limit.
+ *
+ * Problem time limits are imported verbatim from Codeforces, whose judges run
+ * on fast dedicated hardware. Our Judge0 runs on a small shared cloud vCPU
+ * (e2-standard-2) that is materially slower, so a CORRECT solution calibrated
+ * for CF can exceed the raw limit here. This multiplier scales every limit up
+ * to compensate. Tunable via JUDGE_HW_MULTIPLIER (default 2.5).
+ *
+ * The per-language `timeMultiplier` is separate — it covers interpreter/JVM
+ * startup overhead, not the speed of the underlying machine.
+ */
+const HW_MULTIPLIER = (() => {
+  const v = Number(process.env.JUDGE_HW_MULTIPLIER ?? '2.5');
+  return Number.isFinite(v) && v > 0 ? v : 2.5;
+})();
+
+/** Upper bound on any effective limit, to stay within Judge0's MAX_CPU_TIME_LIMIT. */
+const MAX_EFFECTIVE_TIME_MS = 15000;
+
 function truncate(s: string): string {
   const trimmed = s.trim();
   return trimmed.length > MAX_ERROR_LEN ? trimmed.slice(0, MAX_ERROR_LEN) + '\n…[truncated]' : trimmed;
@@ -62,7 +82,8 @@ function truncate(s: string): string {
 
 /** Classify a single Piston run into a verdict. AC decided by output comparison. */
 function classifyRun(run: PistonRunResult['run'], actual: string, expected: string): Verdict {
-  // Killed by signal almost always means OOM (SIGKILL/SIGSEGV) or timeout.
+  // SIGOOM is our sentinel for Judge0 status 6 (MLE); must check before SIGKILL.
+  if (run.signal === 'SIGOOM') return 'MLE';
   if (run.signal === 'SIGKILL' || run.signal === 'SIGXCPU') return 'TLE';
   if (run.signal === 'SIGSEGV' || run.signal === 'SIGBUS') return 'RE';
   // Non-zero exit without a known timeout/OOM signal => runtime error.
@@ -74,7 +95,10 @@ function classifyRun(run: PistonRunResult['run'], actual: string, expected: stri
 export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult> {
   const { language, source, testCases, timeLimitMs, memoryLimitMb } = spec;
 
-  const effectiveTimeMs = Math.round(timeLimitMs * language.timeMultiplier);
+  const effectiveTimeMs = Math.min(
+    MAX_EFFECTIVE_TIME_MS,
+    Math.round(timeLimitMs * language.timeMultiplier * HW_MULTIPLIER),
+  );
   const effectiveMemMb = Math.round(memoryLimitMb * language.memoryMultiplier);
 
   // First, a single execution on the first case to detect compile errors up front.
@@ -156,11 +180,12 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
     };
   }
 
-  // Run remaining test cases in parallel with concurrency limit.
-  // Judge0 CE is a single-instance server — firing 49+ requests at once
-  // overwhelms it and causes TLE on queued submissions.
+  // Run remaining test cases in parallel, but keep the batch small. The Judge0
+  // client enforces a global concurrency cap (JUDGE0_MAX_CONCURRENT) matching
+  // the worker pool, so a large batch here would only pile up in that queue.
+  // A batch of 3 also lets us short-circuit on TLE sooner.
   const remainingTestCases = testCases.slice(1);
-  const BATCH_SIZE = 5;
+  const BATCH_SIZE = 3;
   const results: Array<{ status: 'fulfilled'; value: PistonRunResult } | { status: 'rejected'; reason: unknown }> = [];
 
   for (let i = 0; i < remainingTestCases.length; i += BATCH_SIZE) {

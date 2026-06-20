@@ -104,6 +104,7 @@ model User {
   feedback       Feedback[]
 
   @@index([elo]) // leaderboard / matchmaking range scans
+  @@index([elo, wins]) // leaderboard ordering (elo desc, wins desc tiebreak)
 }
 
 model Problem {
@@ -267,6 +268,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -276,6 +278,8 @@ model Session {
   expires      DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {

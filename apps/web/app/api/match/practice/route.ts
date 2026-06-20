@@ -4,6 +4,7 @@ import { db } from '@zapdos/db';
 import { createMatch } from '@zapdos/match';
 import { emitToUser } from '@/lib/socket';
 import { BOT_EMAIL, BOT_USERNAME } from '@/lib/bot-config';
+import { checkRateLimit } from '@/lib/rate-limit';
 import type { MatchStartPayload } from '@zapdos/realtime';
 import type { Difficulty } from '@zapdos/db';
 
@@ -12,6 +13,15 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const user = await requireUser();
+
+    // Rate limit practice creation to stop create→forfeit spam loops.
+    const rateLimit = await checkRateLimit(`practice:${user.id}`);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many practice matches. Slow down a moment.', retryAfterMs: rateLimit.retryAfterMs },
+        { status: 429 },
+      );
+    }
 
     // Parse difficulty from body — only EASY and MEDIUM allowed (HARD is reserved)
     let difficulty = 'MEDIUM';

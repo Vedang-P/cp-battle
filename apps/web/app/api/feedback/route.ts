@@ -48,8 +48,13 @@ export async function POST(req: Request) {
   }
 }
 
-// GET /api/feedback — read all feedback (admin only in future, open for now)
-export async function GET() {
+// GET /api/feedback — read all feedback (admin-key protected)
+export async function GET(req: Request) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret || req.headers.get('x-admin-secret') !== adminSecret) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const feedback = await db.feedback.findMany({
       orderBy: { createdAt: 'desc' },

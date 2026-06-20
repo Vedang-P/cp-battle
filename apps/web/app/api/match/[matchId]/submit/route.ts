@@ -9,7 +9,7 @@ import { finalizeMatch } from '@zapdos/match';
 import { emitToMatch, emitToUser } from '@/lib/socket';
 import type { SubmissionVerdictPayload, OpponentSnapshot, MatchEndPayload } from '@zapdos/realtime';
 import { checkRateLimit } from '@/lib/rate-limit';
-import { checkBudget, incrementBudget, budgetExceededResponse } from '@/lib/budget';
+import { incrementAndCheckBudget, budgetExceededResponse } from '@/lib/budget';
 import { withJudgeConcurrency } from '@/lib/judge-limiter';
 
 export const dynamic = 'force-dynamic';
@@ -62,13 +62,6 @@ export async function POST(
         { error: rateLimit.reason, retryAfterMs: rateLimit.retryAfterMs },
         { status: 429 },
       );
-    }
-
-    // Monthly budget check (1000 submissions/month cap)
-    // Check budget BEFORE judging to prevent abuse
-    const budgetCheck = await checkBudget(user.id);
-    if (!budgetCheck.allowed) {
-      return budgetExceededResponse();
     }
 
     const { problemId, language, code, mode } = body as {
@@ -137,6 +130,16 @@ export async function POST(
 
     const submissionMode = mode === 'RUN' ? 'RUN' : 'SUBMIT';
 
+    // Monthly budget: atomically increment-then-check for SUBMIT only.
+    // Using incrementAndCheckBudget avoids the TOCTOU race between separate
+    // checkBudget() and incrementBudget() calls.
+    if (submissionMode === 'SUBMIT') {
+      const budget = await incrementAndCheckBudget(user.id);
+      if (!budget.allowed) {
+        return budgetExceededResponse();
+      }
+    }
+
     // For RUN: only sample test cases. For SUBMIT: all test cases.
     const testCases =
       submissionMode === 'RUN'
@@ -173,9 +176,10 @@ export async function POST(
       }));
     } catch (judgeErr) {
       const msg = judgeErr instanceof Error ? judgeErr.message : String(judgeErr);
+      console.error('[submit] judge error:', msg);
       await db.submission.update({
         where: { id: submission.id },
-        data: { verdict: 'CE', passed: 0, error: `Judge error: ${msg.slice(0, 2000)}` },
+        data: { verdict: 'CE', passed: 0, error: msg.slice(0, 2000) },
       });
       return NextResponse.json({
         submissionId: submission.id,
@@ -184,7 +188,7 @@ export async function POST(
         total: testCases.length,
         timeMs: null,
         memoryKb: null,
-        error: `Judge error: ${msg.slice(0, 2000)}`,
+        error: 'Judge unavailable. Please try again.',
         earlyFinish: false,
         matchStatus: 'IN_PROGRESS',
         nextProblem: null,
@@ -194,11 +198,6 @@ export async function POST(
 
     if (!result) {
       return NextResponse.json({ error: 'Judge returned no result' }, { status: 500 });
-    }
-
-    // Increment budget only after successful judge result (SUBMIT mode only)
-    if (submissionMode === 'SUBMIT') {
-      await incrementBudget(user.id);
     }
 
     // Update submission and progress atomically after judging

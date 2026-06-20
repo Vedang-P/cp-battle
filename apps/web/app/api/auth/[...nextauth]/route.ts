@@ -33,9 +33,14 @@ async function checkLoginRateLimit(ip: string): Promise<{ allowed: boolean; retr
 }
 
 function getClientIp(req: NextRequest): string {
+  // X-Real-IP is set by nginx from $remote_addr and cannot be spoofed.
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
+  // Fallback: last entry in X-Forwarded-For is the nginx-visible client.
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded) {
-    return forwarded.split(',')[0]?.trim() ?? 'unknown';
+    const ips = forwarded.split(',');
+    return ips[ips.length - 1]?.trim() ?? 'unknown';
   }
   return 'unknown';
 }

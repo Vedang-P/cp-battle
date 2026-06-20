@@ -37,18 +37,23 @@ export interface LanguageConfig {
 export const LANGUAGES: Record<LanguageId, LanguageConfig> = {
   cpp: {
     id: 'cpp',
-    label: 'C++ (g++ 12)',
+    // Judge0 server is GCC 9.2.0 → C++17. (The pistonLanguage/Version/compile
+    // fields below are vestigial dead config from the Piston era; the live
+    // compiler is set in judge0.ts.)
+    label: 'C++ (GCC 9.2, C++17)',
     extension: 'cpp',
     pistonLanguage: 'c++',
     pistonVersion: '12.2.0',
-    compile: { command: ['g++', '-std=c++20', '-O2', '-o', 'main', 'main.cpp'] },
+    compile: { command: ['g++', '-std=c++17', '-O2', '-o', 'main', 'main.cpp'] },
     run: ['./main'],
     timeMultiplier: 1,
     memoryMultiplier: 1,
   },
   python: {
     id: 'python',
-    label: 'Python (3.10)',
+    // Judge0 server is Python 3.8.1 — NOT 3.10. `match`/`case` and other 3.10+
+    // syntax will fail. Keep the label accurate so users don't write 3.10 code.
+    label: 'Python (3.8)',
     extension: 'py',
     pistonLanguage: 'python',
     pistonVersion: '3.10.0',
@@ -59,7 +64,9 @@ export const LANGUAGES: Record<LanguageId, LanguageConfig> = {
   },
   java: {
     id: 'java',
-    label: 'Java (OpenJDK 19)',
+    // Judge0 server is OpenJDK 13.0.1 — NOT 19. Records, sealed classes, and
+    // other 14+ features are unavailable or preview-only.
+    label: 'Java (OpenJDK 13)',
     extension: 'java',
     pistonLanguage: 'java',
     pistonVersion: '19.0.1',
