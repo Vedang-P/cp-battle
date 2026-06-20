@@ -148,10 +148,10 @@ export default function HomePage() {
   };
 
   return (
-    <main className="relative flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4 py-8">
+    <main className="relative flex flex-1 flex-col items-center justify-center px-4 py-8">
       <MatrixRain opacity={0.03} speed={0.5} />
 
-      <div className="relative z-10 w-full max-w-2xl">
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center w-full max-w-2xl">
         {/* ASCII Art Title */}
         <div className="mb-6 text-center">
           <pre className="text-[4px] sm:text-[6px] md:text-[8px] leading-tight text-green font-mono mx-auto inline-block text-left select-none">
@@ -220,9 +220,9 @@ export default function HomePage() {
             &gt; rank
           </Link>
         </div>
-
-        <Footer />
       </div>
     </main>
+    <Footer />
+
   );
 }

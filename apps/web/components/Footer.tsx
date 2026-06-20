@@ -1,7 +1,7 @@
 export function Footer() {
   return (
     <footer className="border-t border-green/10 bg-bg">
-      <div className="mx-auto flex h-12 max-w-5xl items-center justify-center gap-3 px-6">
+      <div className="mx-auto flex h-10 max-w-5xl items-center justify-center gap-3 px-6">
         <span className="text-xs text-green/30">tokkenmaxxed with love.</span>
         <a
           href="https://github.com/Vedang-P"

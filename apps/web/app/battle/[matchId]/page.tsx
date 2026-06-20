@@ -36,6 +36,7 @@ interface Problem {
   points: number;
   problemOrder: number;
   starterCode?: Record<string, string>;
+  sampleTestCases?: Array<{ input: string; expectedOutput: string }>;
   progress: { status: string; wrongSubmissions: number; scoreEarned: number };
 }
 

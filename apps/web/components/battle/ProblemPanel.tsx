@@ -1,8 +1,12 @@
 'use client';
 
-import ReactMarkdown from 'react-markdown';
 import { renderMath } from '@/lib/render-math';
 import { useMemo } from 'react';
+
+interface SampleTestCase {
+  input: string;
+  expectedOutput: string;
+}
 
 interface Problem {
   id: string;
@@ -11,6 +15,7 @@ interface Problem {
   timeLimitMs: number;
   memoryLimitMb: number;
   points: number;
+  sampleTestCases?: SampleTestCase[];
   progress: { status: string; wrongSubmissions: number; scoreEarned: number };
 }
 
@@ -42,6 +47,32 @@ export function ProblemPanel({ problem }: ProblemPanelProps) {
             [&_.katex-display]:my-4"
           dangerouslySetInnerHTML={{ __html: renderedHtml }}
         />
+
+        {/* Sample Input/Output */}
+        {problem.sampleTestCases && problem.sampleTestCases.length > 0 && (
+          <div className="mt-6 space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary tracking-tight">Examples</h2>
+            {problem.sampleTestCases.map((tc, idx) => (
+              <div key={idx} className="rounded border border-border-subtle bg-bg-panel overflow-hidden">
+                <div className="border-b border-border-subtle bg-bg-elevated px-3 py-1.5">
+                  <span className="font-mono text-xs text-text-muted">
+                    Example {idx + 1}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-border-subtle">
+                  <div className="p-3">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-text-muted">Input</div>
+                    <pre className="overflow-x-auto font-mono text-xs text-text-secondary whitespace-pre">{tc.input}</pre>
+                  </div>
+                  <div className="p-3">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-text-muted">Output</div>
+                    <pre className="overflow-x-auto font-mono text-xs text-text-secondary whitespace-pre">{tc.expectedOutput}</pre>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

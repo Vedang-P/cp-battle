@@ -44,8 +44,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             Skip to content
           </a>
-          <Navbar />
-          <div id="main-content" className="pt-12">{children}</div>
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <div id="main-content" className="flex-1 pt-12">{children}</div>
+          </div>
         </Providers>
       </body>
     </html>

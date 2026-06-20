@@ -2,8 +2,8 @@
  * Render LaTeX math expressions in markdown to HTML using KaTeX.
  *
  * Handles:
- * - Display math: $$$...$$$
- * - Inline math: $...$
+ * - Display math: $$...$$ or $$$$\n....\n$$$$
+ * - Inline math: $...$ or $$$...$$$
  * - Bare LaTeX commands outside delimiters (fallback to Unicode)
  */
 
@@ -51,14 +51,15 @@ function renderKatex(tex: string, displayMode: boolean): string {
 export function renderMath(md: string): string {
   let result = md;
 
-  // 1. Display math: $$$...$$$ → KaTeX block
-  result = result.replace(/\$\$\$(.+?)\$\$\$/gs, (_, tex) => {
+  // 1. Display math: $$...$$ → KaTeX block (only multi-line or explicitly double-dollar)
+  result = result.replace(/\$\$\n?([\s\S]+?)\n?\$\$/g, (_, tex) => {
     return renderKatex(tex.trim(), true);
   });
 
-  // 2. Inline math: $...$ → KaTeX inline
-  //    Must not match $$ (display) or $ in URLs/paths
-  result = result.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (_, tex) => {
+  // 2. Inline math: $...$ and $$$...$$$ → KaTeX inline
+  //    $$$ is Codeforces convention for inline math (not display)
+  //    Must not match $$ (display) delimiters
+  result = result.replace(/(?<!\$)\${1,3}(?!\$)(.+?)(?<!\$)\${1,3}(?!\$)/g, (_, tex) => {
     return renderKatex(tex.trim(), false);
   });
 

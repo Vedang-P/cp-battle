@@ -36,6 +36,13 @@ export async function GET(
     const problemIds = match.problemSequence;
     const dbProblems = await db.problem.findMany({
       where: { id: { in: problemIds } },
+      include: {
+        testCases: {
+          where: { isSample: true },
+          orderBy: { order: 'asc' },
+          take: 2,
+        },
+      },
     });
     const problemMap = new Map(dbProblems.map((p) => [p.id, p]));
 
@@ -54,6 +61,10 @@ export async function GET(
         points: p?.points ?? 100,
         starterCode: p?.starterCode ?? {},
         problemOrder: index,
+        sampleTestCases: (p?.testCases ?? []).map((tc) => ({
+          input: tc.input,
+          expectedOutput: tc.expectedOutput,
+        })),
         progress: prog
           ? {
               status: prog.status,
