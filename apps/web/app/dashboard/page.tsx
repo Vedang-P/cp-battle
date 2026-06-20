@@ -93,7 +93,7 @@ export default function DashboardPage() {
   const eloToNext = nextTier ? nextTier.minElo - profile.elo : 0;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-10 animate-fade-in">
+    <main className="mx-auto max-w-7xl px-4 py-10 animate-fade-in">
       {/* Profile header */}
       <div className="mb-8">
         <div className="flex items-baseline justify-between">

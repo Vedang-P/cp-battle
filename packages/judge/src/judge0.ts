@@ -164,6 +164,7 @@ export async function executeOnce(opts: ExecuteOptions): Promise<PistonRunResult
 
   const params = new URLSearchParams({
     base64_encoded: 'true',
+    wait: 'true',
   });
 
   const body: Record<string, unknown> = {

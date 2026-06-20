@@ -156,19 +156,35 @@ export async function judgeSubmission(spec: SubmissionSpec): Promise<JudgeResult
     };
   }
 
-  // Run remaining test cases in parallel
+  // Run remaining test cases in parallel with concurrency limit.
+  // Judge0 CE is a single-instance server — firing 49+ requests at once
+  // overwhelms it and causes TLE on queued submissions.
   const remainingTestCases = testCases.slice(1);
-  const results = await Promise.allSettled(
-    remainingTestCases.map((tc) =>
-      executeOnce({
-        language,
-        source,
-        stdin: tc.input,
-        cpuTimeLimitMs: effectiveTimeMs,
-        memoryLimitMb: effectiveMemMb,
-      })
-    )
-  );
+  const BATCH_SIZE = 5;
+  const results: Array<{ status: 'fulfilled'; value: PistonRunResult } | { status: 'rejected'; reason: unknown }> = [];
+
+  for (let i = 0; i < remainingTestCases.length; i += BATCH_SIZE) {
+    const batch = remainingTestCases.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(
+      batch.map((tc) =>
+        executeOnce({
+          language,
+          source,
+          stdin: tc.input,
+          cpuTimeLimitMs: effectiveTimeMs,
+          memoryLimitMb: effectiveMemMb,
+        })
+      )
+    );
+    results.push(...batchResults);
+
+    // If any test case in this batch failed with a hard error (TLE/CE),
+    // stop processing remaining batches immediately.
+    const hasHardFailure = batchResults.some(
+      (r) => r.status === 'rejected' && r.reason instanceof TimeoutError
+    );
+    if (hasHardFailure) break;
+  }
 
   let passed = 1; // First test case passed
   let failedVerdict: Verdict | null = null;

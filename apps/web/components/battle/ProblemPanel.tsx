@@ -1,6 +1,8 @@
 'use client';
 
-import { renderMath } from '@/lib/render-math';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { useMemo } from 'react';
 
 interface SampleTestCase {
@@ -23,15 +25,36 @@ interface ProblemPanelProps {
   problem: Problem;
 }
 
+/**
+ * Preprocess markdown to normalize math delimiters before remark-math parses them.
+ * - Convert Codeforces $$$...$$$ to standard $...$
+ * - Convert \(...\) to $...$ and \[...\] to $$...$$
+ */
+function preprocessMathDelimiters(md: string): string {
+  let result = md;
+
+  // Convert $$$...$$$ (Codeforces inline) to $...$
+  // Must handle: $$$x$$$ → $x$ and $$$1 \leq N$$$ → $1 \leq N$
+  result = result.replace(/\${3}(.+?)\${3}/g, (_, tex) => `$${tex}$`);
+
+  // Convert \(...\) to $...$ (inline math)
+  result = result.replace(/\\\((.+?)\\\)/g, (_, tex) => `$${tex}$`);
+
+  // Convert \[...\] to $$...$$ (display math)
+  result = result.replace(/\\\[(.+?)\\\]/gs, (_, tex) => `$$${tex}$$`);
+
+  return result;
+}
+
 export function ProblemPanel({ problem }: ProblemPanelProps) {
-  const renderedHtml = useMemo(
-    () => renderMath(problem.descriptionMd),
+  const processedMd = useMemo(
+    () => preprocessMathDelimiters(problem.descriptionMd),
     [problem.descriptionMd],
   );
 
   return (
     <div className="flex w-1/2 flex-col border-r border-border-subtle max-md:w-full max-md:border-r-0">
-      <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
+      <div className="flex items-center justify-center border-b border-border-subtle px-4 py-2">
         <span className="font-mono text-xs text-text-muted">
           {problem.timeLimitMs}ms · {problem.memoryLimitMb}MB
         </span>
@@ -45,8 +68,14 @@ export function ProblemPanel({ problem }: ProblemPanelProps) {
             [&_li]:ml-4
             [&_.katex]:text-inherit
             [&_.katex-display]:my-4"
-          dangerouslySetInnerHTML={{ __html: renderedHtml }}
-        />
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
+            {processedMd}
+          </ReactMarkdown>
+        </div>
 
         {/* Sample Input/Output */}
         {problem.sampleTestCases && problem.sampleTestCases.length > 0 && (
