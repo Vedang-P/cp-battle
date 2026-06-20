@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { useState, useEffect } from 'react';
+import { signIn, getProviders } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalWindow } from '@/components/TerminalWindow';
@@ -11,6 +11,14 @@ export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [globalError, setGlobalError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Only show OAuth buttons for providers actually configured on the server.
+  const [oauth, setOauth] = useState<{ google: boolean; github: boolean }>({ google: false, github: false });
+
+  useEffect(() => {
+    getProviders()
+      .then((p) => setOauth({ google: !!p?.google, github: !!p?.github }))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -112,7 +120,8 @@ export default function SignUpPage() {
             </div>
           )}
 
-          {/* Google Sign Up Button */}
+          {/* OAuth buttons — only rendered for providers configured server-side */}
+          {oauth.google && (
           <button
             onClick={handleGoogleSignIn}
             disabled={loading}
@@ -126,8 +135,9 @@ export default function SignUpPage() {
             </svg>
             {loading ? 'connecting...' : 'Continue with Google'}
           </button>
+          )}
 
-          {/* GitHub Sign Up Button */}
+          {oauth.github && (
           <button
             onClick={handleGitHubSignIn}
             disabled={loading}
@@ -138,8 +148,10 @@ export default function SignUpPage() {
             </svg>
             {loading ? 'connecting...' : 'Continue with GitHub'}
           </button>
+          )}
 
-          {/* Divider */}
+          {/* Divider — only when at least one OAuth provider is shown */}
+          {(oauth.google || oauth.github) && (
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-border-subtle"></div>
@@ -148,6 +160,7 @@ export default function SignUpPage() {
               <span className="bg-bg-panel px-2 text-text-muted font-mono">or</span>
             </div>
           </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
             <div>

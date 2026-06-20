@@ -1,7 +1,7 @@
 'use client';
 
-import { Suspense, useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { Suspense, useState, useEffect } from 'react';
+import { signIn, getProviders } from 'next-auth/react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalWindow } from '@/components/TerminalWindow';
@@ -12,6 +12,16 @@ function SignInForm() {
   const callbackUrl = searchParams.get('callbackUrl') ?? '/play';
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Only show OAuth buttons for providers actually configured on the server
+  // (a provider with no credentials is omitted from authOptions, so its button
+  // would otherwise lead to a broken sign-in).
+  const [oauth, setOauth] = useState<{ google: boolean; github: boolean }>({ google: false, github: false });
+
+  useEffect(() => {
+    getProviders()
+      .then((p) => setOauth({ google: !!p?.google, github: !!p?.github }))
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -87,7 +97,8 @@ function SignInForm() {
             </div>
           )}
 
-          {/* Google Sign In Button */}
+          {/* OAuth buttons — only rendered for providers configured server-side */}
+          {oauth.google && (
           <button
             onClick={handleGoogleSignIn}
             disabled={loading}
@@ -101,8 +112,9 @@ function SignInForm() {
             </svg>
             {loading ? 'connecting...' : 'Continue with Google'}
           </button>
+          )}
 
-          {/* GitHub Sign In Button */}
+          {oauth.github && (
           <button
             onClick={handleGitHubSignIn}
             disabled={loading}
@@ -113,8 +125,10 @@ function SignInForm() {
             </svg>
             {loading ? 'connecting...' : 'Continue with GitHub'}
           </button>
+          )}
 
-          {/* Divider */}
+          {/* Divider — only when at least one OAuth provider is shown */}
+          {(oauth.google || oauth.github) && (
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-border-subtle"></div>
@@ -123,6 +137,7 @@ function SignInForm() {
               <span className="bg-bg-panel px-2 text-text-muted font-mono">or</span>
             </div>
           </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-3" autoComplete="on">
             <div>
