@@ -148,6 +148,7 @@ export default function HomePage() {
   };
 
   return (
+    <>
     <main className="relative flex flex-1 flex-col items-center justify-center px-4 py-8">
       <MatrixRain opacity={0.03} speed={0.5} />
 
@@ -223,6 +224,6 @@ export default function HomePage() {
       </div>
     </main>
     <Footer />
-
+    </>
   );
 }
