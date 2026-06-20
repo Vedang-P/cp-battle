@@ -29,7 +29,7 @@
 - **ELO Rank Tiers** — Bronze → Silver → Gold → Platinum → Diamond → Master → Grandmaster
 - **Win Streaks** — Track hot streaks with visual indicators
 - **Practice Mode** — Play against AI bot with Easy/Medium difficulty
-- **Google OAuth** — Sign in with Google or email/password
+- **OAuth** — Sign in with Google, GitHub, or email/password
 - **Anonymous Feedback** — Built-in feedback system
 - **Interactive Terminal Landing** — Type commands, explore the platform
 - **Music Player** — Playlist with loop-all, mute toggle, persisted preferences
@@ -126,11 +126,33 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 
 ## Supported Languages
 
-| Language | Judge0 ID | Time Multiplier | Memory Multiplier |
-|----------|-----------|-----------------|-------------------|
-| C++ | 54 (GCC 9.2.0) | 1x | 1x |
-| Python | 71 (3.8.1) | 3x | 2x |
-| Java | 62 (OpenJDK 13.0.1) | 2x | 2x |
+| Language | Judge0 ID | Std | Time Multiplier | Memory Multiplier |
+|----------|-----------|-----|-----------------|-------------------|
+| C++ | 54 (GCC 9.2.0) | C++17 | 1x | 1x |
+| Python | 71 (3.8.1) | 3.8 | 3x | 2x |
+| Java | 62 (OpenJDK 13.0.1) | 13 | 2x | 2x |
+
+> **Versions are pinned to what the live Judge0 server actually runs.** GCC 9.2
+> does **not** support `-std=c++20`, Python is **3.8** (no `match`/`case`), and
+> Java is **OpenJDK 13** (no records). Don't rely on newer-version syntax.
+
+### Judging & Time Limits
+
+Problem time limits are imported verbatim from Codeforces, whose judges run on
+fast dedicated hardware. Our Judge0 runs on a smaller shared cloud vCPU, so a
+**correct** solution can legitimately run slower than the raw limit. To avoid
+false `TLE` verdicts, every limit is scaled:
+
+```
+effective_limit = base_limit × language_multiplier × JUDGE_HW_MULTIPLIER
+```
+
+- `language_multiplier` — interpreter/JVM startup overhead (table above).
+- `JUDGE_HW_MULTIPLIER` — slow-hardware calibration (default **2.5**), capped at
+  a 15s effective limit.
+- Concurrent Judge0 requests are throttled to the worker pool
+  (`JUDGE0_MAX_CONCURRENT`, default **3**) and the wall-clock limit is kept
+  generous so CPU contention can't trip a wall-time TLE.
 
 ---
 
@@ -225,10 +247,11 @@ sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml 
 ### Database Migrations
 
 ```bash
-# On the web VM
+# On the web VM. Run as root (-u root): the container's app user can't write
+# Prisma's engine cache, which fails the default-user invocation.
 cd /home/vedang/cp-battle
 sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml \
-  exec -T web npx prisma migrate deploy
+  exec -u root -T web pnpm --filter @zapdos/db migrate:deploy
 ```
 
 ### Environment Variables
@@ -243,14 +266,19 @@ sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml 
 | `REDIS_URL` | Yes | — | Redis connection string |
 | `JUDGE0_URL` | No | `http://localhost:2358` | Judge0 judge URL |
 | `JUDGE0_API_KEY` | No | — | RapidAPI key (production) |
-| `JUDGE_CONCURRENCY` | No | `4` | Max concurrent judge jobs |
+| `JUDGE_CONCURRENCY` | No | `4` | Max concurrent `judgeSubmission` calls |
+| `JUDGE0_MAX_CONCURRENT` | No | `3` | Global cap on in-flight Judge0 requests (match the worker pool) |
+| `JUDGE_HW_MULTIPLIER` | No | `2.5` | Slow-hardware time-limit calibration |
 | `MATCH_DURATION_SECONDS` | No | `1200` | Battle duration (20 min) |
 | `WRONG_SUBMISSION_PENALTY` | No | `10` | Points deducted per wrong submission |
 | `REALTIME_CORS_ORIGIN` | No | `http://localhost:3000` | CORS origin for Socket.IO |
 | `REALTIME_URL` | No | `http://localhost:3002` | Internal URL for /emit bridge |
 | `NEXT_PUBLIC_REALTIME_URL` | No | `http://localhost:3002` | Public URL for browser Socket.IO |
-| `GOOGLE_CLIENT_ID` | No | — | Google OAuth client ID |
+| `GOOGLE_CLIENT_ID` | No | — | Google OAuth client ID (provider registered only if set) |
 | `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth client secret |
+| `GITHUB_CLIENT_ID` | No | — | GitHub OAuth client ID (provider registered only if set) |
+| `GITHUB_CLIENT_SECRET` | No | — | GitHub OAuth client secret |
+| `ADMIN_SECRET` | No | — | Required (as `X-Admin-Secret` header) to read `GET /api/feedback` |
 
 ---
 
@@ -275,7 +303,7 @@ sudo docker compose --env-file .env.production -f deploy/docker-compose.web.yml 
 | GET | `/api/match/[matchId]/result` | Match result |
 | GET | `/api/match/history` | User's match history |
 | POST | `/api/feedback` | Submit anonymous feedback |
-| GET | `/api/feedback` | Read feedback (admin in future) |
+| GET | `/api/feedback` | Read feedback (requires `X-Admin-Secret` header) |
 
 ---
 
@@ -326,11 +354,14 @@ USERS=50 DURATION=60 pnpm tsx scripts/stress-test.ts
 
 - **HMAC-signed /emit bridge** — all internal Socket.IO event emissions are signed with AUTH_SECRET
 - **JWT-expiry verification** — Socket.IO tokens expire after 1 hour
-- **CSRF protection** — Origin/Referer check on all mutating API routes
+- **CSRF protection** — Origin/Referer check on all mutating API routes; requests with neither header are rejected
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (set at both Next.js and Nginx)
 - **Row-level locking** — `SELECT FOR UPDATE` on Match and User rows during finalization
-- **Atomic rate limiting** — Lua scripts for INCR+PEXPIRE (no orphaned keys)
-- **Sanitized opponent data** — compile/runtime errors never sent to the opponent
-- **Judge0 sandbox** — `enable_network: false`, per-process time/memory limits
+- **Atomic rate limiting + budget** — Lua scripts for INCR+PEXPIRE (no orphaned keys); the monthly submission budget is incremented-and-checked atomically (no TOCTOU over-cap)
+- **Unspoofable client IP** — login/signup rate limits key off Nginx's `X-Real-IP`, not the client-controllable `X-Forwarded-For`
+- **OAuth takeover protection** — OAuth sign-in cannot silently claim an existing password account with the same email; providers are only registered when their credentials are configured
+- **Sanitized opponent data** — compile/runtime errors never sent to the opponent; internal judge errors are not leaked to clients
+- **Judge0 sandbox** — `enable_network: false`, per-process time/memory limits, global request throttle
 - **bcrypt password hashing** — cost factor 12
 - **Disposable email blocklist** — 200+ domains blocked at signup
 - **Input validation** — Zod schemas on all API inputs
