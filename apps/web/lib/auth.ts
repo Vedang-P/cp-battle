@@ -152,10 +152,11 @@ export const authOptions: NextAuthOptions = {
         token.userId = user.id;
         token.username = user.name ?? '';
       }
-      // For OAuth, ensure we have the correct userId from DB
-      if (account?.provider && account.provider !== 'credentials' && user?.email) {
+      // Always refresh onboardingComplete from DB on every token refresh.
+      // This ensures changes (like claim-handle) are reflected immediately.
+      if (token.userId) {
         const dbUser = await db.user.findUnique({
-          where: { email: user.email.toLowerCase() },
+          where: { id: token.userId as string },
           select: { id: true, username: true, onboardingComplete: true },
         });
         if (dbUser) {

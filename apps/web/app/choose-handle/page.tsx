@@ -12,9 +12,9 @@ export default function ChooseHandlePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If onboarding is complete, redirect to home
+  // If onboarding is complete, redirect to play
   if (session?.user?.onboardingComplete) {
-    router.push('/');
+    router.push('/play');
     return null;
   }
 
@@ -52,7 +52,7 @@ export default function ChooseHandlePage() {
 
       // Update the session with the new username
       await update();
-      router.push('/');
+      router.push('/play');
     } catch {
       setError('network error — try again');
     } finally {
