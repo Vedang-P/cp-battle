@@ -136,12 +136,37 @@ Verify infrastructure at [http://localhost:3000/api/health](http://localhost:300
 > does **not** support `-std=c++20`, Python is **3.8** (no `match`/`case`), and
 > Java is **OpenJDK 13** (no records). Don't rely on newer-version syntax.
 
-### Judging & Time Limits
+### Judging architecture
+
+Each submission is **one** Judge0 job, not one per test case. We use Judge0's
+multi-file language (id 89): the source, a compile script, a run harness, and
+every test input are zipped together, so the code **compiles once** and the
+harness runs the compiled program against each case in turn. This matters —
+`#include <bits/stdc++.h> -O2` takes ~1.6s to compile, and problems average ~38
+test cases, so per-test-case compilation was the dominant cost under load.
+
+Key properties (`packages/judge`):
+
+- **Async submit + poll.** We never use Judge0's synchronous `wait=true` (it can
+  hang the connection on our deployment and surface a correct solution as a false
+  TLE). We submit, then poll for the result.
+- **cgroup isolate mode.** The host kernel is cgroup v2, on which isolate's
+  non-cgroup memory path hangs and returns internal errors. Both
+  `enable_per_process_and_thread_*` flags are kept **false** so isolate runs in
+  `--cg` mode.
+- **CPU-time-based per-case limits.** The harness enforces each case with
+  `ulimit -t` (CPU time) plus a generous wall backstop, so wall-clock contention
+  under concurrent load can never cause a false TLE. It stops at the first
+  failing case (first failure decides the verdict).
+- **Precompiled header.** A prebuilt `<bits/stdc++.h>` PCH is mounted into the
+  Judge0 containers (`/opt/judge0-pch`, rebuilt via its `build.sh`), cutting each
+  C++ compile from ~1.6s to ~0.4s.
+
+### Time-limit calibration
 
 Problem time limits are imported verbatim from Codeforces, whose judges run on
 fast dedicated hardware. Our Judge0 runs on a smaller shared cloud vCPU, so a
-**correct** solution can legitimately run slower than the raw limit. To avoid
-false `TLE` verdicts, every limit is scaled:
+**correct** solution can legitimately use more CPU than the raw limit:
 
 ```
 effective_limit = base_limit × language_multiplier × JUDGE_HW_MULTIPLIER
@@ -150,9 +175,9 @@ effective_limit = base_limit × language_multiplier × JUDGE_HW_MULTIPLIER
 - `language_multiplier` — interpreter/JVM startup overhead (table above).
 - `JUDGE_HW_MULTIPLIER` — slow-hardware calibration (default **2.5**), capped at
   a 15s effective limit.
-- Concurrent Judge0 requests are throttled to the worker pool
-  (`JUDGE0_MAX_CONCURRENT`, default **3**) and the wall-clock limit is kept
-  generous so CPU contention can't trip a wall-time TLE.
+- In-flight submissions are throttled by `JUDGE0_MAX_CONCURRENT` (default **12**)
+  and `JUDGE_CONCURRENCY` (app-level, default **12**), sized a little above the
+  Judge0 worker pool (6 workers on the 2-vCPU box).
 
 ---
 
@@ -201,7 +226,7 @@ The music player loops through all tracks and back to the start. Users can mute/
 | VM | Machine Type | IP | Purpose |
 |----|-------------|-----|---------|
 | `cpb-web` | e2-medium | 35.232.246.89 (static) | Next.js + all workers + Postgres + Redis + Nginx |
-| `cpb-judge0` | e2-standard-2 | 10.128.0.3 (internal) | Judge0 CE (3 workers, privileged mode) |
+| `cpb-judge0` | e2-standard-2 | 10.128.0.3 (internal) | Judge0 CE (6 workers, privileged mode) |
 
 ### Architecture
 
@@ -222,7 +247,7 @@ All app services run in Docker containers on the web VM:
 
 ┌─ cpb-judge0 (e2-standard-2, 2 vCPU, 8GB) ──────────────┐
 │  judge0-server (:2358)                                   │
-│  judge0-worker ×3                                        │
+│  judge0-worker ×3 containers (COUNT=2 → 6 workers)       │
 │  judge0-db (Postgres)                                    │
 │  judge0-redis                                            │
 └──────────────────────────────────────────────────────────┘
