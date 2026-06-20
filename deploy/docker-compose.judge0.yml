@@ -60,6 +60,7 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
+      MAX_SANDBOX_ID: "999"
     healthcheck:
       test: ["CMD-SHELL", "/usr/bin/curl -sf http://localhost:2358/languages >/dev/null || exit 1"]
       interval: 10s
@@ -92,6 +93,7 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
+      MAX_SANDBOX_ID: "999"
 
   judge0-worker-2:
     image: mrkushalsm/judge0:latest
@@ -118,6 +120,7 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
+      MAX_SANDBOX_ID: "999"
 
   judge0-worker-3:
     image: mrkushalsm/judge0:latest
@@ -144,6 +147,7 @@ services:
       ENABLE_CGROUP: "false"
       MAX_MEMORY_LIMIT: "512000"
       MEMORY_LIMIT: "256000"
+      MAX_SANDBOX_ID: "999"
 
 volumes:
   judge0-db-data:
