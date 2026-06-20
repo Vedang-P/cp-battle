@@ -44,7 +44,10 @@ RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/
 RUN corepack enable && corepack prepare pnpm@9.7.1 --activate
 
 # Copy built app + all deps + source (workers need TS source for tsx).
-COPY --from=builder /app ./
+# --chown=node:node so the non-root runtime user can write the dirs it needs at
+# runtime: Next.js's .next/cache (fetch/prerender cache) and Prisma's engine
+# cache under node_modules. Without this, both fail with EACCES.
+COPY --chown=node:node --from=builder /app ./
 
 EXPOSE 3000 3002
 
